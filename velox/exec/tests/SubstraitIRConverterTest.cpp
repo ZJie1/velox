@@ -1,18 +1,18 @@
 /*
- * Copyright (c) Facebook, Inc. and its affiliates.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+* Copyright (c) Facebook, Inc. and its affiliates.
+*
+* Licensed under the Apache License, Version 2.0 (the "License");
+* you may not use this file except in compliance with the License.
+* You may obtain a copy of the License at
+*
+*     http://www.apache.org/licenses/LICENSE-2.0
+*
+* Unless required by applicable law or agreed to in writing, software
+* distributed under the License is distributed on an "AS IS" BASIS,
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*/
 
 //#include "SubstraitIRConverterTest.h"
 
@@ -29,103 +29,184 @@ using namespace facebook::velox::exec::test;
 using facebook::velox::test::BatchMaker;
 
 class SubstraitIRConverterTest : public OperatorTestBase {
- protected:
-  std::shared_ptr<const RowType> rowType_{
-      ROW({"c0", "c1", "c2", "c3"},
-          {BIGINT(), INTEGER(), SMALLINT(), DOUBLE()})};
+protected:
+ std::shared_ptr<const RowType> rowType_{
+     ROW({"c0", "c1", "c2", "c3"},
+         { SMALLINT(), SMALLINT(), SMALLINT(), SMALLINT()})};
+ //{BIGINT(), INTEGER(), SMALLINT(), DOUBLE()})};
 
-  void assertFilter(
-      std::vector<RowVectorPtr>&& vectors,
-      const std::string& filter = "c1 % 10  > 0") {
-    auto plan = PlanBuilder().values(vectors).filter(filter).planNode();
+ void assertFilter(
+     std::vector<RowVectorPtr>&& vectors,
+     const std::string& filter = "c1 % 10  > 0") {
+   auto plan = PlanBuilder().values(vectors).filter(filter).planNode();
 
-    assertQuery(plan, "SELECT * FROM tmp WHERE " + filter);
-  }
+   assertQuery(plan, "SELECT * FROM tmp WHERE " + filter);
+ }
 
-  void assertProject(std::vector<RowVectorPtr>&& vectors) {
-    auto vPlan = PlanBuilder()
-                     .values(vectors)
-                     .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
-                     .planNode();
+ void assertProject(std::vector<RowVectorPtr>&& vectors) {
+   auto vPlan = PlanBuilder()
+                    .values(vectors)
+                    .project(std::vector<std::string>{"c0", "c1", "c0+c1"})
+                    .planNode();
 
-    assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp");
+   assertQuery(vPlan, "SELECT c0, c1 , c0+c1 FROM tmp");
 
-    auto message = vPlan->toString(true, true);
-    std::cout << message << std::endl;
-    io::substrait::Plan sPlan;
+   auto message = vPlan->toString(true, true);
+   std::cout <<"vPlan before substrait trans is====================\n"<< message << std::endl;
 
-    sIRConver->toSubstraitIR(vPlan, sPlan);
-    std::cout << "sPlan type should be kRead and project, and actually is "
-              << std::endl;
-    std::cout << sPlan.relations_size() << std::endl;
-    std::cout << "sPlan to String is " << std::endl
-              << sPlan.SerializeAsString();
-  }
 
-  void assertValues(std::vector<RowVectorPtr>&& vectors) {
-    auto vPlan = PlanBuilder().values(vectors).planNode();
+   sIRConver->toSubstraitIR(vPlan, *sPlan);
+   std::cout<<"sPlan is ==============="<<std::endl;
+   sPlan->PrintDebugString();
+   std::string serialized;
+   if (!sPlan->SerializeToString(&serialized)) {
+     throw std::runtime_error("eek");
+   }
 
-    auto message = vPlan->toString();
-    std::cout << message << std::endl;
-    io::substrait::Plan sPlan;
-    sIRConver->toSubstraitIR(vPlan, sPlan);
+   //splan2 is the same with sPlan. readback
+   io::substrait::Plan splan2;
+   splan2.ParseFromString(serialized);
+   std::cout<<"splan2 is"<<std::endl;
+   splan2.PrintDebugString();
 
-    std::cout << "sPlan type should be kRead, and actually is "
-              << sPlan.add_relations()->RelType_case() << std::endl;
-  }
+   std::shared_ptr<const PlanNode> vPlan2 = sIRConver->fromSubstraitIR(splan2);
+   auto mesage2 = vPlan2->toString(true,true);
+   std::cout<<"vPlan2 trans from substrait is================\n"<<mesage2<<std::endl;
 
-  SubstraitVeloxConvertor* sIRConver = new SubstraitVeloxConvertor();
+   assertQuery(vPlan2, "SELECT c0, c1, c0+c1 FROM tmp");
+
+   std::cout<<"vPlan2  after trans from substrait and assertQuery  is================\n"<<mesage2<<std::endl;
+   vPlan2->toString(true,true);
+
+ }
+
+ void assertVtoSProject(std::vector<RowVectorPtr>&& vectors) {
+   auto vPlan = PlanBuilder()
+                    .values(vectors)
+                    .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
+                    .planNode();
+
+   assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp");
+
+   auto message = vPlan->toString(true, true);
+   std::cout << message << std::endl;
+
+
+   sIRConver->toSubstraitIR(vPlan, *sPlan);
+   std::cout<<"sPlan is ==============="<<std::endl;
+   sPlan->PrintDebugString();
+ }
+
+ void assertValues(std::vector<RowVectorPtr>&& vectors) {
+   auto vPlan = PlanBuilder().values(vectors).planNode();
+
+   auto message = vPlan->toString(true, true);
+   std::cout <<"vPlan in assertValues before substrait trans is "<< message << std::endl;
+
+   sIRConver->toSubstraitIR(vPlan, *sPlan);
+   std::cout << "sPlan in assertValues is ===============" << std::endl;
+   sPlan->PrintDebugString();
+
+   // readback
+   auto vPlan2 = sIRConver->fromSubstraitIR(*sPlan);
+
+   auto mesage2 = vPlan2->toString(true,true);
+   std::cout<<"vPlan2 in assertValues trans from substrait is================\n"<<mesage2<<std::endl;
+
+   io::substrait::Plan* sPlan2 = new io::substrait::Plan();
+   sIRConver->toSubstraitIR(vPlan2, *sPlan2);
+   std::cout << "sPlan2 in assertValues is ===============" << std::endl;
+   sPlan2->PrintDebugString();
+
+ }
+
+ void assertVtoSValues(std::vector<RowVectorPtr>&& vectors) {
+   auto vPlan = PlanBuilder().values(vectors).planNode();
+
+   auto message = vPlan->toString(true, true);
+   std::cout << message << std::endl;
+   sIRConver->toSubstraitIR(vPlan, *sPlan);
+   std::cout << "sPlan in assertValues is ===============" << std::endl;
+   sPlan->PrintDebugString();
+ }
+
+ SubstraitVeloxConvertor* sIRConver = new SubstraitVeloxConvertor();
+ io::substrait::Plan* sPlan = new io::substrait::Plan();
 };
 
 TEST_F(SubstraitIRConverterTest, values) {
-  std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
-  createDuckDbTable(vectors);
-  assertValues(std::move(vectors));
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 3; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 2, *pool_));
+   vectors.push_back(vector);
+ }
+ createDuckDbTable(vectors);
+ assertValues(std::move(vectors));
 }
 
-TEST_F(SubstraitIRConverterTest, filter) {
-  std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
-    vectors.push_back(vector);
-  }
-  createDuckDbTable(vectors);
-
-  assertFilter(std::move(vectors));
+TEST_F(SubstraitIRConverterTest, assertVtoSValues) {
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 3; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 2, *pool_));
+   vectors.push_back(vector);
+ }
+ createDuckDbTable(vectors);
+ assertVtoSValues(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, project) {
-  std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
-  createDuckDbTable(vectors);
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 3; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 1, *pool_));
+   vectors.push_back(vector);
+ }
 
-  assertProject(std::move(vectors));
+ createDuckDbTable(vectors);
+
+ assertProject(std::move(vectors));
+}
+
+TEST_F(SubstraitIRConverterTest, vTosproject) {
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 3; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 2, *pool_));
+   vectors.push_back(vector);
+ }
+ createDuckDbTable(vectors);
+
+ assertVtoSProject(std::move(vectors));
+}
+
+TEST_F(SubstraitIRConverterTest, filter) {
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 10; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 100, *pool_));
+   vectors.push_back(vector);
+ }
+ createDuckDbTable(vectors);
+
+ assertFilter(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, filterProject) {
-  std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
-    vectors.push_back(vector);
-  }
-  createDuckDbTable(vectors);
+ std::vector<RowVectorPtr> vectors;
+ for (int32_t i = 0; i < 10; ++i) {
+   auto vector = std::dynamic_pointer_cast<RowVector>(
+       BatchMaker::createBatch(rowType_, 100, *pool_));
+   vectors.push_back(vector);
+ }
+ createDuckDbTable(vectors);
 
-  auto plan = PlanBuilder()
-                  .values(vectors)
-                  .filter("c1 % 10  > 0")
-                  .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
-                  .planNode();
+ auto plan = PlanBuilder()
+                 .values(vectors)
+                 .filter("c1 % 10  > 0")
+                 .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
+                 .planNode();
 
-  assertQuery(plan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+ assertQuery(plan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
 }
