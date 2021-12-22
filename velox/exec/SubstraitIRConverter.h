@@ -15,6 +15,10 @@
 #include <string>
 #include <typeinfo>
 
+#include "expression.pb.h"
+#include "plan.pb.h"
+#include "relations.pb.h"
+
 #include "connectors/hive/HiveConnector.h"
 #include "connectors/hive/HivePartitionFunction.h"
 #include "parse/Expressions.h"
@@ -23,10 +27,6 @@
 #include "exec/RoundRobinPartitionFunction.h"
 #include "expression/Expr.h"
 #include "type/Type.h"
-
-#include "expression.pb.h"
-#include "plan.pb.h"
-#include "relations.pb.h"
 #include "core/PlanNode.h"
 
 using namespace facebook::velox::core;
