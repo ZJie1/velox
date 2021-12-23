@@ -51,16 +51,16 @@ class SubstraitIRConverterTest : public OperatorTestBase {
     assertQuery(vPlan, "SELECT c0, c1 , c0 + c1 FROM tmp");
 
     auto message = vPlan->toString(true, true);
-    std::cout << "vPlan before substrait trans is: \n" << message << std::endl;
+    LOG(INFO) << "vPlan before substrait trans is: \n" << message << std::endl;
 
     sIRConver->toSubstraitIR(vPlan, *sPlan);
-    std::cout << "sPlan is :" << std::endl;
+    LOG(INFO) << "sPlan is :" << std::endl;
     sPlan->PrintDebugString();
 
     // readback
     std::shared_ptr<const PlanNode> vPlan2 = sIRConver->fromSubstraitIR(*sPlan);
     auto mesage2 = vPlan2->toString(true, true);
-    std::cout << "vPlan2 trans from substrait is \n" << mesage2 << std::endl;
+    LOG(INFO) << "vPlan2 trans from substrait is \n" << mesage2 << std::endl;
 
     assertQuery(vPlan2, "SELECT c0, c1, c0 + c1 FROM tmp");
   }
@@ -74,10 +74,10 @@ class SubstraitIRConverterTest : public OperatorTestBase {
     assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp");
 
     auto message = vPlan->toString(true, true);
-    std::cout << message << std::endl;
+    LOG(INFO) << message << std::endl;
 
     sIRConver->toSubstraitIR(vPlan, *sPlan);
-    std::cout << "sPlan is :" << std::endl;
+    LOG(INFO) << "sPlan is :" << std::endl;
     sPlan->PrintDebugString();
   }
 
@@ -85,23 +85,23 @@ class SubstraitIRConverterTest : public OperatorTestBase {
     auto vPlan = PlanBuilder().values(vectors).planNode();
 
     auto message = vPlan->toString(true, true);
-    std::cout << "vPlan in assertValues before substrait trans is " << message
+    LOG(INFO) << "vPlan in assertValues before substrait trans is " << message
               << std::endl;
 
     sIRConver->toSubstraitIR(vPlan, *sPlan);
-    std::cout << "sPlan in assertValues is :" << std::endl;
+    LOG(INFO) << "sPlan in assertValues is :" << std::endl;
     sPlan->PrintDebugString();
 
     // readback
     auto vPlan2 = sIRConver->fromSubstraitIR(*sPlan);
 
     auto mesage2 = vPlan2->toString(true, true);
-    std::cout << "vPlan2 in assertValues trans from substrait is\n"
+    LOG(INFO) << "vPlan2 in assertValues trans from substrait is\n"
               << mesage2 << std::endl;
 
     io::substrait::Plan* sPlan2 = new io::substrait::Plan();
     sIRConver->toSubstraitIR(vPlan2, *sPlan2);
-    std::cout << "sPlan2 in assertValues is " << std::endl;
+    LOG(INFO) << "sPlan2 in assertValues is " << std::endl;
     sPlan2->PrintDebugString();
   }
 
@@ -109,9 +109,9 @@ class SubstraitIRConverterTest : public OperatorTestBase {
     auto vPlan = PlanBuilder().values(vectors).planNode();
 
     auto message = vPlan->toString(true, true);
-    std::cout << message << std::endl;
+    LOG(INFO) << message << std::endl;
     sIRConver->toSubstraitIR(vPlan, *sPlan);
-    std::cout << "sPlan in assertValues is " << std::endl;
+    LOG(INFO) << "sPlan in assertValues is " << std::endl;
     sPlan->PrintDebugString();
   }
 

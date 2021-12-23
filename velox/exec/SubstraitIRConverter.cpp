@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -738,7 +740,7 @@ void SubstraitVeloxConvertor::toSubstraitIR(
             RelCommon_Distribution_DISTRIBUTION_TYPE_SINGLETON);
   }
   // TODO this is for debug
-  std::cout << "the final " << std::endl;
+  LOG(INFO) << "the final " << std::endl;
   sRel->PrintDebugString();
   //    auto d_field = relCommon->mutable_distribution()->mutable_d_field;
 }
@@ -905,7 +907,7 @@ void SubstraitVeloxConvertor::transformVProjNode(
       veloxTypeToSubstrait(vExprType, sGlobalMappingStructType);
 
     } else {
-      std::cout << "the type haven't added" << std::endl;
+      LOG(WARNING) << "the type haven't added" << std::endl;
     }
   }
 
@@ -1062,7 +1064,7 @@ void SubstraitVeloxConvertor::transformVExpr(
       // TODO need to change yaml file to register functin, now is dummy.
       // the substrait communcity have changed many in this part...
       int64_t sFunId = registerSFunction(vCallTypeExprFunName);
-      std::cout << "sFunId is " << sFunId << std::endl;
+      LOG(INFO) << "sFunId is " << sFunId << std::endl;
       sFun->mutable_id()->set_id(sFunId);
 
       for (auto& vArg : vCallTypeInput) {
