@@ -269,16 +269,16 @@ VectorPtr BatchMaker::createVector<TypeKind::MAP>(
     std::function<bool(vector_size_t /*index*/)> isNullAt);
 
 VectorPtr createRow(
-    const std::shared_ptr<const Type>& type,
-    size_t size,
-    bool allowNulls,
+    const std::shared_ptr<const Type>& type, //rowType_ 4col 1row data.
+    size_t size, // capacity
+    bool allowNulls, //false
     MemoryPool& pool,
-    std::mt19937& gen,
+    std::mt19937& gen,  // just ignore
     std::function<bool(vector_size_t /*index*/)> isNullAt) {
   BufferPtr nulls;
   size_t nullCount = 0;
 
-  if (allowNulls) {
+  if (allowNulls) { // will skip this part the first time
     nulls = AlignedBuffer::allocate<char>(bits::nbytes(size), &pool);
     auto* nullsPtr = nulls->asMutable<uint64_t>();
     for (size_t i = 0; i < size; ++i) {
@@ -290,10 +290,11 @@ VectorPtr createRow(
     }
   }
 
+  // each children is one column(children[i]),the size in each children is the batchSize.
   auto& row = type->asRow();
-  std::vector<VectorPtr> children(row.size());
+  std::vector<VectorPtr> children(row.size()); // supposed to be 4??? each row has 4 cols
   for (size_t i = 0; i < row.size(); ++i) {
-    auto child = row.childAt(i);
+    auto child = row.childAt(i);// each col value in the specfic row[one]
     children[i] = VELOX_DYNAMIC_TYPE_DISPATCH(
         BatchMaker::createVector,
         child->kind(),
