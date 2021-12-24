@@ -297,9 +297,9 @@ VectorPtr createRow(
     auto child = row.childAt(i);// each col value in the specfic row[one]
     children[i] = VELOX_DYNAMIC_TYPE_DISPATCH(
         BatchMaker::createVector,
-        child->kind(),
+        child->kind(), //smallInt
         child,
-        size,
+        size,// capacity
         pool,
         gen,
         isNullAt);
