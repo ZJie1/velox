@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include "velox/dwio/dwrf/test/utils/BatchMaker.h"
+
 #include "SubstraitIRConverter.h"
 
 namespace facebook::velox {
@@ -439,44 +441,19 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
     // TODO this should be the vector.size* batchSize .
     int64_t numRows = sRead.virtual_table().values_size();
     int64_t numColumns = vOutputType->size();
-    std::vector<velox::VectorPtr> vectors;
-    vectors.reserve(numColumns);
+    int64_t valueFieldNums = sRead.virtual_table().values(numRows - 1).fields_size();
 
-    for (int64_t i = 0; i < numColumns; ++i) {
-      auto base =
-          velox::BaseVector::create(vOutputType->childAt(i), numRows, pool_);
-      vectors.emplace_back(base);
-    }
-
-    auto rowVector = std::make_shared<RowVector>(
-        pool_, vOutputType, BufferPtr(), numRows, std::move(vectors), 0);
-
-    for (int64_t row = 0; row < numRows; ++row) {
-      io::substrait::Expression_Literal_Struct value =
-          sRead.virtual_table().values(row);
-      numColumns = value.fields_size();
-      for (int64_t column = 0; column < numColumns; ++column) {
-        io::substrait::Expression_Literal field = value.fields(column);
-
-        auto expr = transformSLiteralExpr(field);
-
-        if (auto constantExpr =
-                std::dynamic_pointer_cast<const ConstantTypedExpr>(expr)) {
-          if (!constantExpr->hasValueVector()) {
-            setCellFromVariant(rowVector, row, column, constantExpr->value());
-          } else {
-            VELOX_UNSUPPORTED(
-                "Values node with complex type values is not supported yet");
-          }
-        } else {
-          VELOX_FAIL("Expected constant expression");
-        }
-      }
+    std::vector<RowVectorPtr> vectors;
+    auto batchSize = valueFieldNums / numColumns;
+    for (int32_t i = 0; i < numRows; ++i) {
+      auto vector = std::dynamic_pointer_cast<RowVector>(
+          test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
+      vectors.push_back(vector);
     }
 
     return std::make_shared<ValuesNode>(
         std::to_string(depth),
-        std::vector<RowVectorPtr>{rowVector},
+        move(vectors),
         parallelizable);
   }
 }
@@ -781,7 +758,6 @@ void SubstraitVeloxConvertor::transformVValuesNode(
 
   const PlanNodeId id = vValuesNode->id();
   // sread.virtual_table().values_size(); multi rows
-  // TODO this should be vectorSize* batchSzie
   int64_t numRows = vValuesNode->values().size();
   // should be the same value.kFieldsFieldNumber  = vOutputType->size();
   int64_t numColumns;
@@ -796,9 +772,9 @@ void SubstraitVeloxConvertor::transformVValuesNode(
     numColumns = rowValue->childrenSize();
 
     for (int64_t column = 0; column < numColumns; ++column) {
-      io::substrait::Expression_Literal* sField = sLitValue->add_fields();
+      io::substrait::Expression_Literal* sField;
 
-      VectorPtr& children = rowValue->childAt(column);
+      VectorPtr children = rowValue->childAt(column);
 
       // to handle the null value. TODO need to confirm
       std::optional<vector_size_t> nullCount = children->getNullCount();
@@ -815,35 +791,75 @@ void SubstraitVeloxConvertor::transformVValuesNode(
 
       switch (childType->kind()) {
         case velox::TypeKind::BOOLEAN: {
-          sField->set_boolean(*childernValue->asMutable<bool>());
+          auto childToFlatVec = children->asFlatVector<bool>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_boolean(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::TINYINT: {
-          sField->set_i8(*childernValue->asMutable<int8_t>());
+          auto childToFlatVec = children->asFlatVector<int8_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i8(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::SMALLINT: {
-          sField->set_i16(*childernValue->asMutable<int16_t>());
+          auto childToFlatVec = children->asFlatVector<int16_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i16(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::INTEGER: {
-          sField->set_i32(*childernValue->asMutable<int32_t>());
+          auto childToFlatVec = children->asFlatVector<int32_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i32(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::BIGINT: {
-          sField->set_i64(*childernValue->asMutable<int64_t>());
+          auto childToFlatVec = children->asFlatVector<int64_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i64(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::REAL: {
-          sField->set_fp32(*childernValue->asMutable<float_t>());
+          auto childToFlatVec = children->asFlatVector<float_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_fp32(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::DOUBLE: {
-          sField->set_fp64(*childernValue->asMutable<double_t>());
+          auto childToFlatVec = children->asFlatVector<double_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_fp64(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::VARCHAR: {
-          sField->set_var_char(*childernValue->asMutable<std::string>());
+          auto childToFlatVec = children->asFlatVector<std::string>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_var_char(childToFlatVec->valueAt(i));
+          }
           break;
         }
         default:

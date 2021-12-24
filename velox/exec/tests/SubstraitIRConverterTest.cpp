@@ -32,7 +32,7 @@ class SubstraitIRConverterTest : public OperatorTestBase {
  protected:
   std::shared_ptr<const RowType> rowType_{
       ROW({"c0", "c1", "c2", "c3"},
-          {SMALLINT(), SMALLINT(), SMALLINT(), SMALLINT()})};
+          {INTEGER(), INTEGER(), INTEGER(), INTEGER()})};
 
   void assertFilter(
       std::vector<RowVectorPtr>&& vectors,
@@ -145,7 +145,7 @@ TEST_F(SubstraitIRConverterTest, project) {
   std::vector<RowVectorPtr> vectors;
   for (int32_t i = 0; i < 3; ++i) {
     auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 1, *pool_));
+        BatchMaker::createBatch(rowType_, 2, *pool_));
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
