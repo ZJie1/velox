@@ -373,7 +373,7 @@ void setCellFromVariantByKind(
   using T = typename TypeTraits<KIND>::NativeType;
 
   auto flatVector = column->as<FlatVector<T>>();
-  flatVector->set(row, value.value<T>());
+    flatVector->set(row, value.value<T>());
 }
 
 template<>
@@ -462,8 +462,6 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
     int64_t numRows = sRead.virtual_table().values_size();
     int64_t numColumns = vOutputType->size();
     int64_t valueFieldNums = sRead.virtual_table().values(numRows - 1).fields_size();
-    //std::vector<velox::VectorPtr> vectors;
-    //vectors.reserve(numColumns_8);
 
 
 
@@ -484,41 +482,109 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
 
 
  //  TODO for debug
-  std::vector<RowVectorPtr> vectors;
-    auto batchSize = valueFieldNums/numColumns;
- for (int32_t i = 0; i < numRows; ++i) {
+    std::vector<RowVectorPtr> vectors;
+    auto batchSize = valueFieldNums / numColumns;
+    for (int32_t i = 0; i < numRows; ++i) {
       auto vector = std::dynamic_pointer_cast<RowVector>(
           test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
       vectors.push_back(vector);
     }
-    // TODO for debug end
 
-/*    for (int64_t i = 0; i < valueFieldNums; ++i) {
-      auto base =
-          velox::BaseVector::create(vOutputType->childAt(i), numRows, pool_);
-      vectors.emplace_back(base);
+    for (int i = 0; i<vectors.size(); i++){
+      RowVectorPtr vector = vectors[i];
+      numColumns = vector->childrenSize();
+      for (int64_t column = 0; column < numColumns; ++column) {
+        VectorPtr children = vector->childAt(column);
+        std::shared_ptr<const Type> childType = children->type();
+        auto childernValue = children->values();
+
+        switch (childType->kind()) {
+          case velox::TypeKind::TINYINT: {
+            auto childToFlatVec = children->asFlatVector<int8_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
+            break;
+          }
+          case velox::TypeKind::SMALLINT: {
+            //TODO debug
+            std::cout << "in the SAMLLINT=======================\n";
+            //std::cout << childernValue->asMutable<int16_t>() << std::endl;
+            std::cout << *childernValue->asMutable<int16_t>() << std::endl;
+            //way1
+            auto childToFlatVec = children->asFlatVector<int16_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
+            break;
+          }
+          case velox::TypeKind::INTEGER: {
+            std::cout << "in the INTEGER=======================\n";
+            std::cout << childernValue->asMutable<int32_t>() << std::endl;
+            std::cout << *childernValue->asMutable<int32_t>() << std::endl;
+            auto childToFlatVec = children->asFlatVector<int32_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
+            break;
+          }
+          case velox::TypeKind::BIGINT: {
+            //TODO debug
+            std::cout << "in the BIGINT=======================\n";
+            std::cout << childernValue->asMutable<int64_t>() << std::endl;
+            std::cout << *childernValue->asMutable<int64_t>() << std::endl;
+
+            auto childToFlatVec = children->asFlatVector<int64_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
+            break;
+          }
+          default:
+            throw std::runtime_error(
+                "Unsupported type " + std::string(childType->kindName()));
+        }
+      }
     }
+    // TODO for debug end
+/*   std::vector<velox::VectorPtr> vectors;
+    vectors.reserve(valueFieldNums);
+    auto batchSize = valueFieldNums/numColumns;
+ * std::cout<<"the type of vOutputType->childAt(0)->kind() is "<<vOutputType->childAt(0)->kind()<<std::endl;
+    for (int64_t i = 0; i < numColumns; ++i) {
+        auto base =
+            velox::BaseVector::create(vOutputType->childAt(i), numRows*batchSize, pool_);
+        vectors.emplace_back(base);
+    }
+    std::cout<< "finished set vectors \n";
 
     auto rowVector = std::make_shared<RowVector>(
-        pool_, vOutputType, BufferPtr(), numRows, std::move(vectors), 0);
+        pool_, vOutputType, BufferPtr(), numRows*batchSize, std::move(vectors), 0);
 
-    for (int64_t row = 0; row < numRows; ++row) {
+     int64_t rowAddBatchSize = 0;
+    for (int64_t row = 0; row < numRows; row++) {
       auto tmpSize = sRead.virtual_table().values_size();
       io::substrait::Expression_Literal_Struct value =
           sRead.virtual_table().values(row);
       int64_t valueFieldNums = value.fields_size();
       auto batchSize = valueFieldNums/numColumns;
       std::cout<<"batchSize is :"<<batchSize<<std::endl;
-      int64_t columnAddBatchSize = batchSize;
-      for (int64_t column = 0; column < valueFieldNums; column = column + batchSize) {
+      int64_t columnAddBatchSize = 0;
+      for (int64_t column = 0; column < numColumns; column++) {
         std::cout<< "The column is :"<<column<<std::endl;
         io::substrait::Expression_Literal field;// = value.fields(column);
         for (int i = 0; i< batchSize; i++){
-          int64_t colIndex = column +i;
+          int64_t colIndex = columnAddBatchSize +i;
           field = value.fields(colIndex);
           std::cout<< "In S to V, the field id is : " <<colIndex<< " the filed is : "<<field.i32()<<std::endl;
-
-
         auto expr = transformSLiteralExpr(field);
 
         if (auto constantExpr =
@@ -526,8 +592,8 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
           if (!constantExpr->hasValueVector()) {
             //TODO for debug
             std::cout << "In S to V, the value after transformSLiteralExpr is :" << constantExpr->value() << std::endl;
-            // the row in here should be the batchsize Capacity
-            setCellFromVariant(rowVector, row, colIndex, constantExpr->value());
+            // the row in here is the index for the constantExpr->value not the size
+            setCellFromVariant(rowVector, rowAddBatchSize + i, column, constantExpr->value());
           } else {
             std::cout << "In S to V, not hasValueVector \n";
             VELOX_UNSUPPORTED(
@@ -538,36 +604,53 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
           VELOX_FAIL("Expected constant expression");
         }
         }
-
+        columnAddBatchSize +=batchSize;
 
       }
+       rowAddBatchSize += batchSize;
+    }
 
-    }*/
-
-/*    auto tmpRowNum = rowVector->size();  // supposed to be 3
+    auto tmpRowNum = rowVector->size();  // supposed to be 3
     auto rowVectorChildSize = rowVector->childrenSize();// supposed to be 4
     std::cout << "In S to V, the tmpRowNum is :" << tmpRowNum << "the rowVectorChildSize is :" << rowVectorChildSize
               << std::endl;
 
     for (int row = 0; row < numRows; row++) {
       for (int col = 0; col < rowVectorChildSize; col++) {
-        auto children = rowVector->childAt(col)->values();
+       std::cout<< "After set rowVector, in the row "<<row<<" col :" <<col<<std::endl;
 
         switch (rowVector->childAt(col)->typeKind()) {
           case velox::TypeKind::INTEGER: {
-            std::cout << *children->asMutable<int32_t>() << std::endl;
+            auto childToFlatVec = rowVector->childAt(col)->asFlatVector<int32_t>();
+
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "After set rowVector, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
             break;
           }
           case velox::TypeKind::SMALLINT: {
-            std::cout << *children->asMutable<int16_t>() << std::endl;
+            auto childToFlatVec = rowVector->childAt(col)->asFlatVector<int16_t>();
+
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i< flatVecSzie; i++){
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "After set rowVector, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            }
             break;
           }
         }
         // std::cout <<*children->asMutable<int32_t>()<<std::endl;
         // std::cout<<children<<std::endl;
       }
-    }*/
+    }
 
+    return std::make_shared<ValuesNode>(
+        std::to_string(depth),
+        std::vector<RowVectorPtr>{rowVector},
+        parallelizable);
+        */
     return std::make_shared<ValuesNode>(
         std::to_string(depth),
         move(vectors),
@@ -928,28 +1011,6 @@ void SubstraitVeloxConvertor::transformVValuesNode(
       // should be the same with rowValue->type();
       std::shared_ptr<const Type> childType = children->type();
       auto childernValue = children->values();
-      //TODO debug begin
-/*      // this 2
-      VectorPtr childrensss = rowValue->childAt(column);
-      auto tmp2 = childrensss->asFlatVector<int32_t>();
-      auto stringBuff = tmp2->stringBuffers();
-      auto flatVecSzie = tmp2->size();
-      auto flatVecValue0 = tmp2->valueAt(0);
-      auto flatVecValues = tmp2->values();
-
-      auto childernValue = children->values();*/
-      //auto tmp = childernValue->size();
-
-/*      // or this range is 2 .
-      auto tmp3 = childernValue->asMutableRange<int32_t>();
-      auto rangeBegin = tmp3.begin();
-      auto rangeEnd = tmp3.end();
-     auto rangeData =  tmp3.data();
-
-      auto tmp5 = tmp3.operator[](0);
-
-      auto tmp4 = *childernValue->asMutable<int32_t>();*/
-
 
       //TODO debug
       std::cout << "childernValue is =======" << childernValue << std::endl;
