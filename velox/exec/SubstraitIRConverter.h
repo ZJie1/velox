@@ -23,13 +23,13 @@
 
 #include "connectors/hive/HiveConnector.h"
 #include "connectors/hive/HivePartitionFunction.h"
-#include "parse/Expressions.h"
-#include "parse/ExpressionsParser.h"
+#include "core/PlanNode.h"
 #include "exec/HashPartitionFunction.h"
 #include "exec/RoundRobinPartitionFunction.h"
 #include "expression/Expr.h"
+#include "parse/Expressions.h"
+#include "parse/ExpressionsParser.h"
 #include "type/Type.h"
-#include "core/PlanNode.h"
 
 using namespace facebook::velox::core;
 
@@ -154,8 +154,12 @@ class SubstraitVeloxConvertor {
   uint64_t last_function_id = 0;
   io::substrait::Plan plan;
 
-  io::substrait::Type_NamedStruct* sGlobalMapping = new io::substrait::Type_NamedStruct();
-  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool = velox::memory::getDefaultScopedMemoryPool();
+  // Substrait is ordinal based field reference implementation. sGlobalMapping
+  // is used to tracked the mapping from ID to field reference.
+  io::substrait::Type_NamedStruct* sGlobalMapping =
+      new io::substrait::Type_NamedStruct();
+  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool =
+      velox::memory::getDefaultScopedMemoryPool();
   velox::memory::MemoryPool* pool_;
 };
 } // namespace facebook::velox

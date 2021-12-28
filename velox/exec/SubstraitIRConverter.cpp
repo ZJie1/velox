@@ -171,9 +171,8 @@ SubstraitVeloxConvertor::transformSLiteralExpr(
     const io::substrait::Expression_Literal& sLiteralExpr) {
   switch (sLiteralExpr.literal_type_case()) {
     case io::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
-      // TODO cast to double
       return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.decimal()));
+          velox::variant(sLiteralExpr.fp64()));
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kString: {
       return std::make_shared<ConstantTypedExpr>(
@@ -441,7 +440,8 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
     // TODO this should be the vector.size* batchSize .
     int64_t numRows = sRead.virtual_table().values_size();
     int64_t numColumns = vOutputType->size();
-    int64_t valueFieldNums = sRead.virtual_table().values(numRows - 1).fields_size();
+    int64_t valueFieldNums =
+        sRead.virtual_table().values(numRows - 1).fields_size();
 
     std::vector<RowVectorPtr> vectors;
     auto batchSize = valueFieldNums / numColumns;
@@ -452,9 +452,7 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
     }
 
     return std::make_shared<ValuesNode>(
-        std::to_string(depth),
-        move(vectors),
-        parallelizable);
+        std::to_string(depth), move(vectors), parallelizable);
   }
 }
 
