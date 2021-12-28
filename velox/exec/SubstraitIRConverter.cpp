@@ -267,9 +267,9 @@ std::shared_ptr<const ITypedExpr> SubstraitVeloxConvertor::transformSExpr(
         children.push_back(transformSExpr(sArg, sGlobalMapping));
       }
       //TODO search function name by yaml extension
-      std::string function_name = "plus";
-      //std::string function_name =
-      //    FindFunction(sExpr.scalar_function().id().id());
+      //std::string function_name = "plus";
+      std::string function_name =
+          FindFunction(sExpr.scalar_function().id().id());
       //  and or  try concatrow
       if (function_name != "if" && function_name != "switch") {
         return std::make_shared<CallTypedExpr>(
@@ -881,6 +881,10 @@ void SubstraitVeloxConvertor::toSubstraitIR(
     auto sFilterRel = sRel->mutable_filter();
     transformVFilter(filterNode, sFilterRel, sGlobalMapping);
     relCommon = sFilterRel->mutable_common();
+
+    // TODO this is for debug
+    std::cout << "the sFilterRel==========" << std::endl;
+    sFilterRel->PrintDebugString();
   }
   if (auto aggNode =
       std::dynamic_pointer_cast<const AggregationNode>(vPlanNode)) {
@@ -1234,6 +1238,7 @@ void SubstraitVeloxConvertor::transformVProjNode(
       std::cout << "callType TOString  as outputName is "
                 << vCallTypeExpr->toString() << std::endl;
       // sNewOutMapping->add_names(vCallTypeExpr->toString());
+      //TODO alias names should be add here?
       // add here  globalMapping
       auto sGlobalSize = sGlobalMapping->index_size();
       sGlobalMapping->add_index(sGlobalSize + 1);
@@ -1345,16 +1350,21 @@ void SubstraitVeloxConvertor::transformVPartitionedOutputNode(
 
 void SubstraitVeloxConvertor::transformVFilter(
     std::shared_ptr<const FilterNode> vFilter,
-    io::substrait::FilterRel *sFilter,
-    io::substrait::Type_NamedStruct *sGlobalMapping) {
-  //   Construct substrait expr
-  io::substrait::Type_NamedStruct *newOutMapping =
-      sFilter->mutable_common()->mutable_emit()->add_output_mapping();
-  transformVExpr(
-      sFilter->mutable_condition(), vFilter->filter(), sGlobalMapping);
-
+    io::substrait::FilterRel* sFilter,
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
+  const PlanNodeId vId = vFilter->id();
+  std::shared_ptr<const PlanNode> vSource = vFilter->sources()[0];
+  std::shared_ptr<const ITypedExpr> vFilterCondition = vFilter->filter();
+  const RowTypePtr vOutput = vFilter->outputType();
+  sFilter->mutable_common()->has_direct();
+  io::substrait::Rel* sFilterInput = sFilter->mutable_input();
+  io::substrait::Expression* sFilterCondition = sFilter->mutable_condition();
   //   Build source
-  toSubstraitIR(vFilter->sources()[0], sFilter->mutable_input());
+  toSubstraitIR(vSource, sFilterInput);
+  //   Construct substrait expr
+  transformVExpr(
+      sFilterCondition, vFilterCondition, sGlobalMapping);
+
 }
 
 void SubstraitVeloxConvertor::transformVAgg(
@@ -1369,7 +1379,7 @@ void SubstraitVeloxConvertor::transformVAgg(
 }
 
 // Private APIs for making expressions
-void SubstraitVeloxConvertor::transformVExpr(
+void SubstraitVeloxConvertor:: transformVExpr(
     io::substrait::Expression *sExpr,
     const std::shared_ptr<const ITypedExpr> &vExpr,
     io::substrait::Type_NamedStruct *sGlobalMapping) {
@@ -1475,6 +1485,10 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
     case velox::TypeKind::VARCHAR: {
       std::basic_string<char> vCharValue = vConstExpr.value<Varchar>();
       sLiteralExpr->set_allocated_string(&vCharValue);
+      break;
+    }
+    case velox::TypeKind::BIGINT:{
+      sLiteralExpr->set_i64(vConstExpr.value<TypeKind::BIGINT>());
       break;
     }
     default:

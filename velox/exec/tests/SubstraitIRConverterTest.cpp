@@ -35,12 +35,58 @@ class SubstraitIRConverterTest : public OperatorTestBase {
           {INTEGER(), INTEGER(), INTEGER(), INTEGER()})};
   //{BIGINT(), INTEGER(), SMALLINT(), DOUBLE()})};
 
+  //filter("(c2 < 1000) and (c1 between 0.6 and 1.6) and (c0 >= 100)")
+  void assertVtoSFilter(
+      std::vector<RowVectorPtr> &&vectors,
+      const std::string &filter = "c1 % 10  > 0") {
+    auto vPlan = PlanBuilder().values(vectors).filter(filter).planNode();
+
+    assertQuery(vPlan, "SELECT * FROM tmp WHERE " + filter);
+
+    auto message = vPlan->toString(true, true);
+    std::cout << "vPlan before substrait trans is====================\n" << message << std::endl;
+
+
+    sIRConver->toSubstraitIR(vPlan, *sPlan);
+    std::cout << "sPlan trans from vPlan is ===============" << std::endl;
+    sPlan->PrintDebugString();
+  }
+
+
+  //filter("(c2 < 1000) and (c1 between 0.6 and 1.6) and (c0 >= 100)")
   void assertFilter(
       std::vector<RowVectorPtr> &&vectors,
       const std::string &filter = "c1 % 10  > 0") {
-    auto plan = PlanBuilder().values(vectors).filter(filter).planNode();
+    auto vPlan = PlanBuilder().values(vectors).filter(filter).planNode();
 
-    assertQuery(plan, "SELECT * FROM tmp WHERE " + filter);
+    assertQuery(vPlan, "SELECT * FROM tmp WHERE " + filter);
+
+    auto message = vPlan->toString(true, true);
+    std::cout << "vPlan before substrait trans is====================\n" << message << std::endl;
+
+    sIRConver->toSubstraitIR(vPlan, *sPlan);
+    std::cout << "sPlan after tans from velox filter Plan is ===============" << std::endl;
+    sPlan->PrintDebugString();
+
+    std::string serialized;
+    if (!sPlan->SerializeToString(&serialized)) {
+      throw std::runtime_error("eek");
+    }
+
+    //splan2 is the same with sPlan. readback
+    io::substrait::Plan splan2;
+    splan2.ParseFromString(serialized);
+    std::cout << "splan2 is" << std::endl;
+    splan2.PrintDebugString();
+
+    std::shared_ptr<const PlanNode> vPlan2 = sIRConver->fromSubstraitIR(splan2);
+    auto mesage2 = vPlan2->toString(true, true);
+    std::cout << "vPlan2 trans from substrait is================\n" << mesage2 << std::endl;
+
+    assertQuery(vPlan2, "SELECT * FROM tmp WHERE " + filter);
+
+    auto message3 = vPlan2->toString(true, true);
+    std::cout << "vPlan2  after trans from substrait and assertQuery  is================\n" << message3 << std::endl;
   }
 
   void assertProject(std::vector<RowVectorPtr> &&vectors) {
@@ -183,11 +229,23 @@ TEST_F(SubstraitIRConverterTest, vTosproject) {
   assertVtoSProject(std::move(vectors));
 }
 
+TEST_F(SubstraitIRConverterTest, vToSFilter) {
+  std::vector<RowVectorPtr> vectors;
+  for (int32_t i = 0; i < 3; ++i) {
+    auto vector = std::dynamic_pointer_cast<RowVector>(
+        BatchMaker::createBatch(rowType_, 2, *pool_));
+    vectors.push_back(vector);
+  }
+  createDuckDbTable(vectors);
+
+  assertVtoSFilter(std::move(vectors));
+}
+
 TEST_F(SubstraitIRConverterTest, filter) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
+  for (int32_t i = 0; i < 3; ++i) {
     auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
+        BatchMaker::createBatch(rowType_, 2, *pool_));
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
