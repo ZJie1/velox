@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,6 +14,8 @@
  * limitations under the License.
  */
 
+#include "velox/dwio/dwrf/test/utils/BatchMaker.h"
+
 #include "SubstraitIRConverter.h"
 
 namespace facebook::velox {
@@ -21,7 +25,7 @@ namespace facebook::velox {
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan& sPlan) {
   return fromSubstraitIR(sPlan, 0);
-};
+}
 
 // Private APIs:
 /**
@@ -36,7 +40,7 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     int depth) {
   initFunctionMap(const_cast<io::substrait::Plan&>(sPlan));
   const io::substrait::Rel& sRel = sPlan.relations(depth);
-  fromSubstraitIR(sRel, depth);
+  return fromSubstraitIR(sRel, depth);
 }
 
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
@@ -158,7 +162,7 @@ std::shared_ptr<FilterNode> SubstraitVeloxConvertor::transformSFilter(
   const io::substrait::Expression& sExpr = sFilter.condition();
   return std::make_shared<FilterNode>(
       std::to_string(depth),
-      transformSExpr(sExpr, sFilter.common()),
+      transformSExpr(sExpr, sGlobalMapping),
       fromSubstraitIR(sRel, depth + 1));
 }
 
@@ -167,18 +171,45 @@ SubstraitVeloxConvertor::transformSLiteralExpr(
     const io::substrait::Expression_Literal& sLiteralExpr) {
   switch (sLiteralExpr.literal_type_case()) {
     case io::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
-      // TODO
       return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.decimal()));
+          velox::variant(sLiteralExpr.fp64()));
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kString: {
-      // TODO lets not construct the expression everywhere ay
       return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.string()));
+          velox::variant(sLiteralExpr.var_char()));
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
       return std::make_shared<ConstantTypedExpr>(
           velox::variant(sLiteralExpr.boolean()));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kI64: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(sLiteralExpr.i64()));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kI32: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(sLiteralExpr.i32()));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kI16: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(static_cast<int16_t>(sLiteralExpr.i16())));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kI8: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(static_cast<int8_t>(sLiteralExpr.i8())));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kFp64: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(sLiteralExpr.fp64()));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kFp32: {
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(sLiteralExpr.fp32()));
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kNull: {
+      io::substrait::Type nullValue = sLiteralExpr.null();
+      return std::make_shared<ConstantTypedExpr>(
+          velox::variant(nullValue.kind_case()));
     }
     default:
       throw std::runtime_error(
@@ -188,7 +219,7 @@ SubstraitVeloxConvertor::transformSLiteralExpr(
 
 std::shared_ptr<const ITypedExpr> SubstraitVeloxConvertor::transformSExpr(
     const io::substrait::Expression& sExpr,
-    io::substrait::RelCommon sRelCommon) {
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
   switch (sExpr.rex_type_case()) {
     case io::substrait::Expression::RexTypeCase::kLiteral: {
       auto slit = sExpr.literal();
@@ -202,76 +233,110 @@ std::shared_ptr<const ITypedExpr> SubstraitVeloxConvertor::transformSExpr(
             "Can only have direct struct references in selections");
       }
 
-      // TODO need to confirm the index, use which or just the 0, i think
-      // there is only one column in this case, or for sort order.
-      // the cloumn
       auto outId = sExpr.selection().direct_reference().struct_field().field();
-      // the outputinfo of this column  in the emit
-      io::substrait::Type_NamedStruct* outputInfo =
-          sRelCommon.mutable_emit()->mutable_output_mapping(outId);
-      // the index in the output emit
-      int64_t colId = outputInfo->index(outId);
-      io::substrait::Type stype = outputInfo->struct_().types(colId);
-      std::string sName = outputInfo->names(colId);
-      velox::TypePtr vType = substraitTypeToVelox(stype);
-      return std::make_shared<FieldAccessTypedExpr>(vType, sName);
+      int64_t sGlobalMapSize = sGlobalMapping->index_size();
+      for (int64_t i = 0; i < sGlobalMapSize; i++) {
+        if (sGlobalMapping->index(i) == outId) {
+          auto sName = sGlobalMapping->names(i);
+          auto sType = sGlobalMapping->mutable_struct_()->types(i);
+          velox::TypePtr vType = substraitTypeToVelox(sType);
+          // convert type to row
+          return std::make_shared<FieldAccessTypedExpr>(
+              vType, std::make_shared<InputTypedExpr>(vType), sName);
+        }
+      }
     }
     case io::substrait::Expression::RexTypeCase::kScalarFunction: {
-      // TODO the type is the function parameters' types, now all set to boolean
+      io::substrait::Expression_ScalarFunction sScalarFunc =
+          sExpr.scalar_function();
+      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      velox::TypePtr vScalaFunType = substraitTypeToVelox(sScalaFunOutType);
+
       std::vector<std::shared_ptr<const ITypedExpr>> children;
       for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sRelCommon));
+        children.push_back(transformSExpr(sArg, sGlobalMapping));
       }
-      std::string function_name =
-          FindFunction(sExpr.scalar_function().id().id());
+      // TODO search function name by yaml extension
+      std::string function_name = "plus";
       //  and or  try concatrow
       if (function_name != "if" && function_name != "switch") {
         return std::make_shared<CallTypedExpr>(
-            velox::BOOLEAN(), children, function_name);
+            vScalaFunType, children, function_name);
       }
     }
     case io::substrait::Expression::RexTypeCase::kIfThen: {
+      io::substrait::Expression_ScalarFunction sScalarFunc =
+          sExpr.scalar_function();
+      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      velox::TypePtr vScalaFunType = substraitTypeToVelox(sScalaFunOutType);
+
       std::vector<std::shared_ptr<const ITypedExpr>> children;
       for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sRelCommon));
+        children.push_back(transformSExpr(sArg, sGlobalMapping));
       }
       return std::make_shared<velox::core::CallTypedExpr>(
-          velox::BOOLEAN(), move(children), "if");
+          vScalaFunType, move(children), "if");
     }
     case io::substrait::Expression::RexTypeCase::kSwitchExpression: {
-      // TODO switch
+      io::substrait::Expression_ScalarFunction sScalarFunc =
+          sExpr.scalar_function();
+      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      velox::TypePtr vScalaFunType = substraitTypeToVelox(sScalaFunOutType);
       std::vector<std::shared_ptr<const ITypedExpr>> children;
       for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sRelCommon));
+        children.push_back(transformSExpr(sArg, sGlobalMapping));
       }
       return std::make_shared<velox::core::CallTypedExpr>(
-          velox::BOOLEAN(), move(children), "switch");
+          vScalaFunType, move(children), "switch");
+    }
+    case io::substrait::Expression::kCast: {
+      io::substrait::Expression_Cast sCastExpr = sExpr.cast();
+
+      io::substrait::Type sCastType = sCastExpr.type();
+      std::shared_ptr<const Type> vCastType = substraitTypeToVelox(sCastType);
+
+      // TODO add flag in substrait after. now is set false.
+      bool nullOnFailure = false;
+
+      std::vector<std::shared_ptr<const ITypedExpr>> vCastInputs;
+      io::substrait::Expression sCastInput = sCastExpr.input();
+      std::shared_ptr<const ITypedExpr> vCastInput =
+          transformSExpr(sCastInput, sGlobalMapping);
+      vCastInputs.emplace_back(vCastInput);
+
+      return std::make_shared<CastTypedExpr>(
+          vCastType, vCastInputs, nullOnFailure);
     }
     default:
       throw std::runtime_error(
           "Unsupported expression type " +
           std::to_string(sExpr.rex_type_case()));
   }
-};
+}
 
 std::shared_ptr<PartitionedOutputNode>
 SubstraitVeloxConvertor::transformSDistribute(
     const io::substrait::Plan& sPlan,
-    int depth) {}
+    int depth) {
+  // TODO
+}
 
-const velox::RowTypePtr SubstraitVeloxConvertor::sNamedStructToVRowTypePtr(
+velox::RowTypePtr SubstraitVeloxConvertor::sNamedStructToVRowTypePtr(
     io::substrait::Type_NamedStruct sNamedStruct) {
-  auto sIndex = sNamedStruct.index();
   std::vector<std::string> vNames;
   std::vector<velox::TypePtr> vTypes;
-
-  for (auto index : sIndex) {
-    const io::substrait::Type& sType = sNamedStruct.struct_().types(index);
+  auto sNamedStructSzie = sNamedStruct.index_size();
+  for (int64_t i = 0; i < sNamedStructSzie; i++) {
+    const io::substrait::Type& sType = sNamedStruct.struct_().types(i);
     velox::TypePtr vType = substraitTypeToVelox(sType);
-    vNames.push_back(sNamedStruct.names(index));
-    vTypes.push_back(vType);
+    std::string sName = sNamedStruct.names(i);
+    vNames.emplace_back(sName);
+    vTypes.emplace_back(vType);
   }
-  return ROW(std::move(vNames), std::move(vTypes));
+
+  std::shared_ptr<const RowType> vRowTypeRes =
+      ROW(std::move(vNames), std::move(vTypes));
+  return vRowTypeRes;
 }
 
 std::shared_ptr<const ITypedExpr> SubstraitVeloxConvertor::parseExpr(
@@ -331,7 +396,7 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
     const io::substrait::Rel& sRel,
     int depth) {
   const io::substrait::ReadRel& sRead = sRel.read();
-  const std::shared_ptr<const velox::RowType> vOutputType =
+  std::shared_ptr<const velox::RowType> vOutputType =
       sNamedStructToVRowTypePtr(sRead.base_schema());
 
   // TODO need to add the impl of type local_files
@@ -339,23 +404,12 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
   if (sRead.has_filter()) {
     return std::make_shared<FilterNode>(
         std::to_string(depth),
-        transformSExpr(sRead.filter(), sRead.common()),
+        transformSExpr(sRead.filter(), sGlobalMapping),
         fromSubstraitIR(sRel, depth + 1));
   }
 
   if (sRead.has_projection()) {
-    std::vector<std::shared_ptr<const ITypedExpr>> expressions;
-    for (auto& sproj : sRead.projection().select().struct_items()) {
-      // TODO make sure nothing else is in there
-      expressions.push_back(
-          parseExpr(std::to_string(sproj.field()), vOutputType));
-    }
-
-    return std::make_shared<ProjectNode>(
-        std::to_string(depth),
-        vOutputType->names(),
-        expressions,
-        fromSubstraitIR(sRel, depth + 1));
+    throw std::runtime_error("Unsupported projection in sRead ");
   }
 
   if (sRead.has_named_table()) {
@@ -381,49 +435,24 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
 
   if (sRead.has_virtual_table()) {
     bool parallelizable = false;
-    velox::memory::MemoryPool* pool_;
+    pool_ = scopedPool.get();
 
+    // TODO this should be the vector.size* batchSize .
     int64_t numRows = sRead.virtual_table().values_size();
     int64_t numColumns = vOutputType->size();
-    std::vector<velox::VectorPtr> vectors;
-    vectors.reserve(numColumns);
+    int64_t valueFieldNums =
+        sRead.virtual_table().values(numRows - 1).fields_size();
 
-    for (int64_t i = 0; i < numColumns; ++i) {
-      auto base =
-          velox::BaseVector::create(vOutputType->childAt(i), numRows, pool_);
-      vectors.emplace_back(base);
-    }
-
-    auto rowVector = std::make_shared<RowVector>(
-        pool_, vOutputType, BufferPtr(), numRows, std::move(vectors), 0);
-
-    for (int64_t row = 0; row < numRows; ++row) {
-      io::substrait::Expression_Literal_Struct value =
-          sRead.virtual_table().values(row);
-      numColumns = value.kFieldsFieldNumber;
-      for (int64_t column = 0; column < numColumns; ++column) {
-        io::substrait::Expression_Literal field = value.fields(column);
-
-        auto expr = transformSLiteralExpr(field);
-
-        if (auto constantExpr =
-                std::dynamic_pointer_cast<const ConstantTypedExpr>(expr)) {
-          if (!constantExpr->hasValueVector()) {
-            setCellFromVariant(rowVector, row, column, constantExpr->value());
-          } else {
-            VELOX_UNSUPPORTED(
-                "Values node with complex type values is not supported yet");
-          }
-        } else {
-          VELOX_FAIL("Expected constant expression");
-        }
-      }
+    std::vector<RowVectorPtr> vectors;
+    auto batchSize = valueFieldNums / numColumns;
+    for (int32_t i = 0; i < numRows; ++i) {
+      auto vector = std::dynamic_pointer_cast<RowVector>(
+          test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
+      vectors.push_back(vector);
     }
 
     return std::make_shared<ValuesNode>(
-        std::to_string(depth),
-        std::vector<RowVectorPtr>{rowVector},
-        parallelizable);
+        std::to_string(depth), move(vectors), parallelizable);
   }
 }
 
@@ -435,17 +464,27 @@ std::shared_ptr<ProjectNode> SubstraitVeloxConvertor::transformSProject(
   std::vector<std::string> names;
 
   for (auto& sExpr : sProj.expressions()) {
-    vExpressions.push_back(transformSExpr(sExpr, sProj.common()));
+    vExpressions.push_back(transformSExpr(sExpr, sGlobalMapping));
+  }
+  // TODO check if there should be depth? now it's only one output_mapping, so
+  // depth = 0 is right for the simple case(proj->values)
+  // sProjOutMap = sProj.common().emit().output_mapping(depth);
+  io::substrait::Type_NamedStruct sProjOutMap =
+      sProj.common().emit().output_mapping(0);
+  // the proj common is always start from 0. because the way we trans from velox
+  // to substrait.
+  int64_t sProjOutMapSize = sProjOutMap.index_size();
+  for (int64_t i = 0; i < sProjOutMapSize; i++) {
+    names.push_back(sProjOutMap.names(i));
   }
 
-  for (auto index : sProj.common().emit().output_mapping(depth).index()) {
-    names.push_back(sProj.common().emit().output_mapping(depth).names(index));
-  }
-  return std::make_shared<ProjectNode>(
+  std::shared_ptr<ProjectNode> vProjNode = std::make_shared<ProjectNode>(
       std::to_string(depth),
       names,
       vExpressions,
       fromSubstraitIR(sProj.input(), depth + 1));
+
+  return vProjNode;
 }
 
 std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
@@ -516,7 +555,7 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
     // AggregateFunction.args
     for (const io::substrait::Expression& sarg : smeas.measure().args()) {
       std::shared_ptr<const ITypedExpr> vexpr =
-          transformSExpr(sarg, sagg.common());
+          transformSExpr(sarg, sGlobalMapping);
       children.push_back(vexpr);
       out_name += vexpr->toString();
     }
@@ -567,7 +606,7 @@ std::shared_ptr<OrderByNode> SubstraitVeloxConvertor::transformSSort(
     // TODO check whether  ssort.common() need to be the node output before
     const io::substrait::Expression sExpr = sOrderField.expr();
     std::shared_ptr<const ITypedExpr> sortingKey =
-        transformSExpr(sExpr, sSort.common());
+        transformSExpr(sExpr, sGlobalMapping);
     auto constSortKey =
         std::dynamic_pointer_cast<const FieldAccessTypedExpr>(sortingKey);
     sortingKeys.push_back(constSortKey);
@@ -611,7 +650,7 @@ std::shared_ptr<OrderByNode> SubstraitVeloxConvertor::transformSSort(
 
 void SubstraitVeloxConvertor::toSubstraitIR(
     std::shared_ptr<const PlanNode> vPlan,
-    io::substrait::Plan sPlan) {
+    io::substrait::Plan& sPlan) {
   // TODO register function mapping
   // Assume only accepts a single plan fragment
   io::substrait::Rel* sRel = sPlan.add_relations();
@@ -632,7 +671,7 @@ void SubstraitVeloxConvertor::toSubstraitIR(
   if (auto filterNode =
           std::dynamic_pointer_cast<const FilterNode>(vPlanNode)) {
     auto sFilterRel = sRel->mutable_filter();
-    transformVFilter(filterNode, sFilterRel);
+    transformVFilter(filterNode, sFilterRel, sGlobalMapping);
     relCommon = sFilterRel->mutable_common();
   }
   if (auto aggNode =
@@ -644,14 +683,15 @@ void SubstraitVeloxConvertor::toSubstraitIR(
   if (auto vValuesNode =
           std::dynamic_pointer_cast<const ValuesNode>(vPlanNode)) {
     io::substrait::ReadRel* sReadRel = sRel->mutable_read();
-
     transformVValuesNode(vValuesNode, sReadRel);
     relCommon = sReadRel->mutable_common();
+
+    sGlobalMapping->MergeFrom(*sReadRel->mutable_base_schema());
   }
   if (auto vProjNode =
           std::dynamic_pointer_cast<const ProjectNode>(vPlanNode)) {
     io::substrait::ProjectRel* sProjRel = sRel->mutable_project();
-    transformVProjNode(vProjNode, sProjRel);
+    transformVProjNode(vProjNode, sProjRel, sGlobalMapping);
     relCommon = sProjRel->mutable_common();
   }
   if (auto partitionedOutputNode =
@@ -674,6 +714,9 @@ void SubstraitVeloxConvertor::toSubstraitIR(
         io::substrait::RelCommon_Distribution_DISTRIBUTION_TYPE::
             RelCommon_Distribution_DISTRIBUTION_TYPE_SINGLETON);
   }
+  // TODO this is for debug
+  LOG(INFO) << "the final " << std::endl;
+  sRel->PrintDebugString();
   //    auto d_field = relCommon->mutable_distribution()->mutable_d_field;
 }
 
@@ -684,11 +727,12 @@ SubstraitVeloxConvertor::vRowTypePtrToSNamedStruct(
   int64_t vSize = vRow->size();
   std::vector<std::string> vNames = vRow->names();
   std::vector<std::shared_ptr<const Type>> vTypes = vRow->children();
+  int64_t sNamedStructSize = sNamedStruct->index_size();
 
   for (int64_t i = 0; i < vSize; ++i) {
     std::string vName = vNames.at(i);
     std::shared_ptr<const Type> vType = vTypes.at(i);
-    sNamedStruct->add_index(i);
+    sNamedStruct->add_index(sNamedStructSize + i);
     sNamedStruct->add_names(vName);
     io::substrait::Type* sStruct = sNamedStruct->mutable_struct_()->add_types();
 
@@ -710,70 +754,110 @@ void SubstraitVeloxConvertor::transformVValuesNode(
       sReadRel->mutable_base_schema();
   vRowTypePtrToSNamedStruct(vOutPut, sBaseSchema);
 
-
-  io::substrait::RelCommon_Emit* sOutputEmit =
-      sReadRel->mutable_common()->mutable_emit();
-
-  io::substrait::Type_NamedStruct* sOutputMapping =
-      sOutputEmit->add_output_mapping();
-  vRowTypePtrToSNamedStruct(vOutPut, sOutputMapping);
-
   const PlanNodeId id = vValuesNode->id();
   // sread.virtual_table().values_size(); multi rows
   int64_t numRows = vValuesNode->values().size();
   // should be the same value.kFieldsFieldNumber  = vOutputType->size();
   int64_t numColumns;
   // multi rows, each row is a RowVectorPrt
-  io::substrait::Expression_Literal_Struct* sLitValue =
-      sVirtualTable->add_values();
 
   for (int64_t row = 0; row < numRows; ++row) {
-    // mutable_values(row);
     // the specfic row
+    io::substrait::Expression_Literal_Struct* sLitValue =
+        sVirtualTable->add_values();
     RowVectorPtr rowValue = vValuesNode->values().at(row);
     // the column numbers in the specfic row.
     numColumns = rowValue->childrenSize();
 
     for (int64_t column = 0; column < numColumns; ++column) {
-      io::substrait::Expression_Literal* sField = sLitValue->add_fields();
+      io::substrait::Expression_Literal* sField;
 
-      auto children = rowValue->childAt(column);
+      VectorPtr children = rowValue->childAt(column);
+
+      // to handle the null value. TODO need to confirm
+      std::optional<vector_size_t> nullCount = children->getNullCount();
+
+      if (nullCount.has_value()) {
+        io::substrait::Type* null = new io::substrait::Type;
+        null->Nullability_IsValid(0);
+        sField->set_allocated_null(null);
+        break;
+      }
       // should be the same with rowValue->type();
       std::shared_ptr<const Type> childType = children->type();
-
       auto childernValue = children->values();
 
       switch (childType->kind()) {
         case velox::TypeKind::BOOLEAN: {
-          sField->set_boolean(*childernValue->asMutable<bool>());
+          auto childToFlatVec = children->asFlatVector<bool>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_boolean(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::TINYINT: {
-          sField->set_i8(*childernValue->asMutable<int8_t>());
+          auto childToFlatVec = children->asFlatVector<int8_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i8(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::SMALLINT: {
-          sField->set_i16(*childernValue->asMutable<int16_t>());
+          auto childToFlatVec = children->asFlatVector<int16_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i16(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::INTEGER: {
-          sField->set_i32(*childernValue->asMutable<int32_t>());
+          auto childToFlatVec = children->asFlatVector<int32_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i32(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::BIGINT: {
-          sField->set_i64(*childernValue->asMutable<int64_t>());
+          auto childToFlatVec = children->asFlatVector<int64_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_i64(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::REAL: {
-          sField->set_fp32(*childernValue->asMutable<float_t>());
+          auto childToFlatVec = children->asFlatVector<float_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_fp32(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::DOUBLE: {
-          sField->set_fp64(*childernValue->asMutable<double_t>());
+          auto childToFlatVec = children->asFlatVector<double_t>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_fp64(childToFlatVec->valueAt(i));
+          }
           break;
         }
         case velox::TypeKind::VARCHAR: {
-          sField->set_var_char(*childernValue->asMutable<std::string>());
+          auto childToFlatVec = children->asFlatVector<std::string>();
+          vector_size_t flatVecSzie = childToFlatVec->size();
+          for (int64_t i = 0; i < flatVecSzie; i++) {
+            sField = sLitValue->add_fields();
+            sField->set_var_char(childToFlatVec->valueAt(i));
+          }
           break;
         }
         default:
@@ -786,29 +870,61 @@ void SubstraitVeloxConvertor::transformVValuesNode(
 
 void SubstraitVeloxConvertor::transformVProjNode(
     std::shared_ptr<const ProjectNode> vProjNode,
-    io::substrait::ProjectRel* sProjRel) {
+    io::substrait::ProjectRel* sProjRel,
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
   const PlanNodeId vId = vProjNode->id();
   std::vector<std::string> vNames = vProjNode->names();
   std::vector<std::shared_ptr<const ITypedExpr>> vProjections =
       vProjNode->projections();
   std::shared_ptr<const PlanNode> vSource = vProjNode->sources()[0];
-  toSubstraitIR(vSource, sProjRel->mutable_input());
+
+  const RowTypePtr vOutput = vProjNode->outputType();
+
+  io::substrait::Rel* sProjInput = sProjRel->mutable_input();
+  toSubstraitIR(vSource, sProjInput);
+
+  io::substrait::RelCommon_Emit* sProjEmit =
+      sProjRel->mutable_common()->mutable_emit();
+  io::substrait::Type_NamedStruct* sNewOutMapping =
+      sProjEmit->add_output_mapping();
+  io::substrait::Type* sGlobalMappingStructType =
+      sGlobalMapping->mutable_struct_()->add_types();
 
   int64_t vProjectionSize = vProjections.size();
   for (int64_t i = 0; i < vProjectionSize; i++) {
     std::shared_ptr<const ITypedExpr>& vExpr = vProjections.at(i);
     io::substrait::Expression* sExpr = sProjRel->add_expressions();
-    transformVExpr(sExpr, sProjRel->mutable_common(), i, vExpr);
+
+    transformVExpr(sExpr, vExpr, sGlobalMapping);
+    // add outputMapping for each vExpr
+    const std::shared_ptr<const Type> vExprType = vExpr->type();
+    io::substrait::Type* sOutMappingStructType =
+        sNewOutMapping->mutable_struct_()->add_types();
+    veloxTypeToSubstrait(vExprType, sOutMappingStructType);
+
+    sNewOutMapping->add_index(i);
+    sNewOutMapping->add_names(vNames[i]);
+    // TODO: or just use this :sNewOutMapping->add_names(vNames[i]);
+    if (auto vFieldExpr =
+            std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vExpr)) {
+      std::string vExprName = vFieldExpr->name();
+      // sNewOutMapping->add_names(vExprName);
+      continue;
+    } else if (
+        auto vCallTypeExpr =
+            std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
+      // sNewOutMapping->add_names(vCallTypeExpr->toString());
+      // add here  globalMapping
+      auto sGlobalSize = sGlobalMapping->index_size();
+      sGlobalMapping->add_index(sGlobalSize + 1);
+      sGlobalMapping->add_names(vCallTypeExpr->toString());
+      veloxTypeToSubstrait(vExprType, sGlobalMappingStructType);
+
+    } else {
+      LOG(WARNING) << "the type haven't added" << std::endl;
+    }
   }
 
-  io::substrait::Type_NamedStruct* sNames =
-      sProjRel->mutable_common()->mutable_emit()->add_output_mapping();
-  int64_t vNameSize = vNames.size();
-  for (int64_t i = 0; i < vNameSize; i++) {
-    sNames->add_index(i);
-    sNames->add_names(vNames[i]);
-  }
-  std::cout << sNames << std::endl;
   return;
 }
 
@@ -908,13 +1024,11 @@ void SubstraitVeloxConvertor::transformVPartitionedOutputNode(
 
 void SubstraitVeloxConvertor::transformVFilter(
     std::shared_ptr<const FilterNode> vFilter,
-    io::substrait::FilterRel* sFilter) {
+    io::substrait::FilterRel* sFilter,
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
   //   Construct substrait expr
   transformVExpr(
-      sFilter->mutable_condition(),
-      sFilter->mutable_common(),
-      0,
-      vFilter->filter());
+      sFilter->mutable_condition(), vFilter->filter(), sGlobalMapping);
 
   //   Build source
   toSubstraitIR(vFilter->sources()[0], sFilter->mutable_input());
@@ -934,25 +1048,48 @@ void SubstraitVeloxConvertor::transformVAgg(
 // Private APIs for making expressions
 void SubstraitVeloxConvertor::transformVExpr(
     io::substrait::Expression* sExpr,
-    io::substrait::RelCommon* sRelCommon,
-    int64_t index,
-    const std::shared_ptr<const ITypedExpr>& vExpr) {
+    const std::shared_ptr<const ITypedExpr>& vExpr,
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
   // TODO
-  if (auto vConstantExpr =
+  if (std::shared_ptr<const ConstantTypedExpr> vConstantExpr =
           std::dynamic_pointer_cast<const ConstantTypedExpr>(vExpr)) {
     // Literal
     io::substrait::Expression_Literal* sLiteralExpr = sExpr->mutable_literal();
-    // TODO remove this after checked.
-    std::cout << vConstantExpr->toString();
     transformVConstantExpr(vConstantExpr->value(), sLiteralExpr);
     return;
   } else if (
       auto vCallTypeExpr =
           std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
+    std::shared_ptr<const Type> vExprType = vCallTypeExpr->type();
+    std::vector<std::shared_ptr<const ITypedExpr>> vCallTypeInput =
+        vCallTypeExpr->inputs();
+    std::string vCallTypeExprFunName = vCallTypeExpr->name();
     // different by function names.
-    // kIfThen
-    // kScalarFunction
-    // kSwitchExpression
+    if (vCallTypeExprFunName == "if") {
+      io::substrait::Expression_IfThen* sFun = sExpr->mutable_if_then();
+      // TODO
+    } else if (vCallTypeExprFunName == "switch") {
+      io::substrait::Expression_SwitchExpression* sFun =
+          sExpr->mutable_switch_expression();
+      // TODO
+    } else {
+      io::substrait::Expression_ScalarFunction* sFun =
+          sExpr->mutable_scalar_function();
+      // TODO need to change yaml file to register functin, now is dummy.
+      // the substrait communcity have changed many in this part...
+      int64_t sFunId = registerSFunction(vCallTypeExprFunName);
+      LOG(INFO) << "sFunId is " << sFunId << std::endl;
+      sFun->mutable_id()->set_id(sFunId);
+
+      for (auto& vArg : vCallTypeInput) {
+        io::substrait::Expression* sArg = sFun->add_args();
+        transformVExpr(sArg, vArg, sGlobalMapping);
+      }
+      io::substrait::Type* sFunType = sFun->mutable_output_type();
+      veloxTypeToSubstrait(vExprType, sFunType);
+      return;
+    }
+
   } else if (
       auto vFieldExpr =
           std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vExpr)) {
@@ -965,28 +1102,37 @@ void SubstraitVeloxConvertor::transformVExpr(
             ->mutable_direct_reference()
             ->mutable_struct_field();
 
-    // TODO for now , it's multi output_mapping and one index in the
-    // output_mapping
-    /*//another case is  (one table and multi columns ??),  one output_mapping
-     * and multi index in the output_mapping*/
-    sDirectStruct->set_field(index);
-    int64_t sId = sDirectStruct->field();
-    io::substrait::Type_NamedStruct* sOutMapping =
-        sRelCommon->mutable_emit()->add_output_mapping();
+    int64_t sIndex;
+    int64_t sGlobMapNameSize = sGlobalMapping->names_size();
+    for (int64_t i = 0; i < sGlobMapNameSize; i++) {
+      if (sGlobalMapping->names(i) == vExprName) {
+        // get the index
+        sIndex = sGlobalMapping->index(i);
+        break;
+      }
+    }
 
-    sOutMapping->add_index(sId);
-    sOutMapping->add_names(vExprName);
+    sDirectStruct->set_field(sIndex);
 
-    io::substrait::Type* sOutMappingStructType =
-        sOutMapping->mutable_struct_()->add_types();
+    return;
 
-    veloxTypeToSubstrait(vExprType, sOutMappingStructType);
+  } else if (
+      auto vCastExpr = std::dynamic_pointer_cast<const CastTypedExpr>(vExpr)) {
+    std::shared_ptr<const Type> vExprType = vCastExpr->type();
+    std::vector<std::shared_ptr<const ITypedExpr>> vCastTypeInputs =
+        vCastExpr->inputs();
+    io::substrait::Expression_Cast* sCastExpr = sExpr->mutable_cast();
+    veloxTypeToSubstrait(vExprType, sCastExpr->mutable_type());
+
+    for (auto& vArg : vCastTypeInputs) {
+      io::substrait::Expression* sExpr = sCastExpr->mutable_input();
+      transformVExpr(sExpr, vArg, sGlobalMapping);
+    }
     return;
 
   } else {
     throw std::runtime_error(
         "Unsupport Expr " + vExpr->toString() + "in Substrait");
-    return;
   }
 }
 

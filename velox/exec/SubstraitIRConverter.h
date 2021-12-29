@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -15,19 +17,19 @@
 #include <string>
 #include <typeinfo>
 
-#include "connectors/hive/HiveConnector.h"
-#include "connectors/hive/HivePartitionFunction.h"
-#include "parse/Expressions.h"
-#include "parse/ExpressionsParser.h"
-#include "exec/HashPartitionFunction.h"
-#include "exec/RoundRobinPartitionFunction.h"
-#include "expression/Expr.h"
-#include "type/Type.h"
-
 #include "expression.pb.h"
 #include "plan.pb.h"
 #include "relations.pb.h"
+
+#include "connectors/hive/HiveConnector.h"
+#include "connectors/hive/HivePartitionFunction.h"
 #include "core/PlanNode.h"
+#include "exec/HashPartitionFunction.h"
+#include "exec/RoundRobinPartitionFunction.h"
+#include "expression/Expr.h"
+#include "parse/Expressions.h"
+#include "parse/ExpressionsParser.h"
+#include "type/Type.h"
 
 using namespace facebook::velox::core;
 
@@ -37,7 +39,7 @@ class SubstraitVeloxConvertor {
  public:
   void toSubstraitIR(
       std::shared_ptr<const PlanNode> vPlan,
-      io::substrait::Plan sPlan);
+      io::substrait::Plan& sPlan);
 
   std::shared_ptr<const PlanNode> fromSubstraitIR(
       const io::substrait::Plan& sPlan);
@@ -56,7 +58,7 @@ class SubstraitVeloxConvertor {
 
   std::shared_ptr<const ITypedExpr> transformSExpr(
       const io::substrait::Expression& sExpr,
-      io::substrait::RelCommon sRelCommon);
+      io::substrait::Type_NamedStruct* sGlobalMapping);
 
   std::shared_ptr<FilterNode> transformSFilter(
       const io::substrait::Rel& sRel,
@@ -66,7 +68,7 @@ class SubstraitVeloxConvertor {
       const io::substrait::Plan& sPlan,
       int depth);
 
-  const velox::RowTypePtr sNamedStructToVRowTypePtr(
+  velox::RowTypePtr sNamedStructToVRowTypePtr(
       io::substrait::Type_NamedStruct sNamedStruct);
 
   std::shared_ptr<const ITypedExpr> parseExpr(
@@ -104,7 +106,8 @@ class SubstraitVeloxConvertor {
 
   void transformVFilter(
       std::shared_ptr<const FilterNode> vFilter,
-      io::substrait::FilterRel* sFilterRel);
+      io::substrait::FilterRel* sFilterRel,
+      io::substrait::Type_NamedStruct* sGlobalMapping);
 
   void transformVValuesNode(
       std::shared_ptr<const ValuesNode> vValuesNode,
@@ -112,7 +115,8 @@ class SubstraitVeloxConvertor {
 
   void transformVProjNode(
       std::shared_ptr<const ProjectNode> vProjNode,
-      io::substrait::ProjectRel* sProjRel);
+      io::substrait::ProjectRel* sProjRel,
+      io::substrait::Type_NamedStruct* sGlobalMapping);
 
   void transformVPartitionedOutputNode(
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode,
@@ -120,9 +124,8 @@ class SubstraitVeloxConvertor {
 
   void transformVExpr(
       io::substrait::Expression* sExpr,
-      io::substrait::RelCommon* sRelCommon,
-      int64_t index,
-      const std::shared_ptr<const ITypedExpr>& vExpr);
+      const std::shared_ptr<const ITypedExpr>& vExpr,
+      io::substrait::Type_NamedStruct* sGlobalMapping);
 
   void transformVConstantExpr(
       const velox::variant& vConstExpr,
@@ -150,5 +153,13 @@ class SubstraitVeloxConvertor {
   std::unordered_map<std::string, uint64_t> function_map;
   uint64_t last_function_id = 0;
   io::substrait::Plan plan;
+
+  // Substrait is ordinal based field reference implementation. sGlobalMapping
+  // is used to tracked the mapping from ID to field reference.
+  io::substrait::Type_NamedStruct* sGlobalMapping =
+      new io::substrait::Type_NamedStruct();
+  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool =
+      velox::memory::getDefaultScopedMemoryPool();
+  velox::memory::MemoryPool* pool_;
 };
 } // namespace facebook::velox
