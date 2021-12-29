@@ -779,7 +779,6 @@ void SubstraitVeloxConvertor::transformVValuesNode(
 
       // to handle the null value. TODO need to confirm
       std::optional<vector_size_t> nullCount = children->getNullCount();
-
       if (nullCount.has_value()) {
         io::substrait::Type* null = new io::substrait::Type;
         null->Nullability_IsValid(0);
@@ -917,7 +916,8 @@ void SubstraitVeloxConvertor::transformVProjNode(
         auto vCallTypeExpr =
             std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
       // sNewOutMapping->add_names(vCallTypeExpr->toString());
-      //TODO alias names should be add here?
+      // TODO alias names should be add here?
+
       // add here  globalMapping
       auto sGlobalSize = sGlobalMapping->index_size();
       sGlobalMapping->add_index(sGlobalSize + 1);
@@ -1038,7 +1038,6 @@ void SubstraitVeloxConvertor::transformVFilter(
   io::substrait::Expression* sFilterCondition = sFilter->mutable_condition();
   //   Build source
   toSubstraitIR(vSource, sFilterInput);
-
   //   Construct substrait expr
   transformVExpr(sFilterCondition, vFilterCondition, sGlobalMapping);
 }
@@ -1154,7 +1153,8 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      std::basic_string<char> vCharValue = vConstExpr.value<TypeKind::VARCHAR>();
+      std::basic_string<char> vCharValue =
+          vConstExpr.value<TypeKind::VARCHAR>();
       sLiteralExpr->set_allocated_string(&vCharValue);
       break;
     }
@@ -1162,23 +1162,23 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
       sLiteralExpr->set_i64(vConstExpr.value<TypeKind::BIGINT>());
       break;
     }
-    case velox::TypeKind::INTEGER:{
+    case velox::TypeKind::INTEGER: {
       sLiteralExpr->set_i32(vConstExpr.value<TypeKind::INTEGER>());
       break;
     }
-    case velox::TypeKind::SMALLINT:{
+    case velox::TypeKind::SMALLINT: {
       sLiteralExpr->set_i16(vConstExpr.value<TypeKind::INTEGER>());
       break;
     }
-    case velox::TypeKind::TINYINT:{
+    case velox::TypeKind::TINYINT: {
       sLiteralExpr->set_i8(vConstExpr.value<TypeKind::INTEGER>());
       break;
     }
-    case velox::TypeKind::BOOLEAN:{
+    case velox::TypeKind::BOOLEAN: {
       sLiteralExpr->set_boolean(vConstExpr.value<TypeKind::BOOLEAN>());
       break;
     }
-    case velox::TypeKind::REAL:{
+    case velox::TypeKind::REAL: {
       sLiteralExpr->set_fp32(vConstExpr.value<TypeKind::REAL>());
       break;
     }

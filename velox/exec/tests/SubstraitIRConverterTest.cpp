@@ -166,7 +166,6 @@ class SubstraitIRConverterTest : public OperatorTestBase {
 
   void assertVeloxToSubstraitValues(std::vector<RowVectorPtr>&& vectors) {
     auto vPlan = PlanBuilder().values(vectors).planNode();
-
     auto message = vPlan->toString(true, true);
     LOG(INFO)
         << "Before transform, velox plan in assertVeloxToSubstraitValues is: \n"
@@ -236,7 +235,6 @@ TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripFilterNode) {
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
-
   assertVeloxSubstraitRoundTripFilter(std::move(vectors));
 }
 
@@ -248,7 +246,6 @@ TEST_F(SubstraitIRConverterTest, veloxToSubstraitFilterNode) {
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
-
   assertVeloxToSubstraitFilter(std::move(vectors));
 }
 
