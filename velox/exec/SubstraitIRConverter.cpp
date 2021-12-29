@@ -24,6 +24,7 @@ namespace facebook::velox {
 // Public API:
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan& sPlan) {
+  initFunctionMap();
   return fromSubstraitIR(sPlan, 0);
 }
 
@@ -38,7 +39,6 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan& sPlan,
     int depth) {
-  initFunctionMap(const_cast<io::substrait::Plan&>(sPlan));
   const io::substrait::Rel& sRel = sPlan.relations(depth);
   return fromSubstraitIR(sRel, depth);
 }
@@ -70,8 +70,8 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
   }
 }
 
-void SubstraitVeloxConvertor::initFunctionMap(io::substrait::Plan& sPlan) {
-  for (auto& sMap : sPlan.mappings()) {
+void SubstraitVeloxConvertor::initFunctionMap() {
+  for (auto& sMap : plan.mappings()) {
     if (!sMap.has_function_mapping()) {
       continue;
     }
@@ -83,7 +83,7 @@ void SubstraitVeloxConvertor::initFunctionMap(io::substrait::Plan& sPlan) {
 std::string SubstraitVeloxConvertor::FindFunction(uint64_t id) {
   if (functions_map.find(id) == functions_map.end()) {
     throw std::runtime_error(
-        "Could not find aggregate function " + std::to_string(id));
+        "Could not find function with id: " + std::to_string(id));
   }
   return functions_map[id];
 }
@@ -157,13 +157,15 @@ std::shared_ptr<FilterNode> SubstraitVeloxConvertor::transformSFilter(
   const io::substrait::FilterRel& sFilter = sRel.filter();
   if (!sFilter.has_condition()) {
     return std::make_shared<FilterNode>(
-        std::to_string(depth), nullptr, fromSubstraitIR(sRel, depth + 1));
+        std::to_string(depth),
+        nullptr,
+        fromSubstraitIR(sFilter.input(), depth + 1));
   }
   const io::substrait::Expression& sExpr = sFilter.condition();
   return std::make_shared<FilterNode>(
       std::to_string(depth),
       transformSExpr(sExpr, sGlobalMapping),
-      fromSubstraitIR(sRel, depth + 1));
+      fromSubstraitIR(sFilter.input(), depth + 1));
 }
 
 std::shared_ptr<const ITypedExpr>
@@ -257,7 +259,8 @@ std::shared_ptr<const ITypedExpr> SubstraitVeloxConvertor::transformSExpr(
         children.push_back(transformSExpr(sArg, sGlobalMapping));
       }
       // TODO search function name by yaml extension
-      std::string function_name = "plus";
+      std::string function_name =
+          FindFunction(sExpr.scalar_function().id().id());
       //  and or  try concatrow
       if (function_name != "if" && function_name != "switch") {
         return std::make_shared<CallTypedExpr>(
@@ -914,6 +917,7 @@ void SubstraitVeloxConvertor::transformVProjNode(
         auto vCallTypeExpr =
             std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
       // sNewOutMapping->add_names(vCallTypeExpr->toString());
+      //TODO alias names should be add here?
       // add here  globalMapping
       auto sGlobalSize = sGlobalMapping->index_size();
       sGlobalMapping->add_index(sGlobalSize + 1);
@@ -1026,12 +1030,17 @@ void SubstraitVeloxConvertor::transformVFilter(
     std::shared_ptr<const FilterNode> vFilter,
     io::substrait::FilterRel* sFilter,
     io::substrait::Type_NamedStruct* sGlobalMapping) {
-  //   Construct substrait expr
-  transformVExpr(
-      sFilter->mutable_condition(), vFilter->filter(), sGlobalMapping);
+  const PlanNodeId vId = vFilter->id();
+  std::shared_ptr<const PlanNode> vSource = vFilter->sources()[0];
+  std::shared_ptr<const ITypedExpr> vFilterCondition = vFilter->filter();
 
+  io::substrait::Rel* sFilterInput = sFilter->mutable_input();
+  io::substrait::Expression* sFilterCondition = sFilter->mutable_condition();
   //   Build source
-  toSubstraitIR(vFilter->sources()[0], sFilter->mutable_input());
+  toSubstraitIR(vSource, sFilterInput);
+
+  //   Construct substrait expr
+  transformVExpr(sFilterCondition, vFilterCondition, sGlobalMapping);
 }
 
 void SubstraitVeloxConvertor::transformVAgg(
@@ -1141,13 +1150,36 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
     io::substrait::Expression_Literal* sLiteralExpr) {
   switch (vConstExpr.kind()) {
     case velox::TypeKind::DOUBLE: {
-      // TODO
-      sLiteralExpr->mutable_decimal()->push_back(1);
+      sLiteralExpr->set_fp64(vConstExpr.value<TypeKind::DOUBLE>());
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      std::basic_string<char> vCharValue = vConstExpr.value<Varchar>();
+      std::basic_string<char> vCharValue = vConstExpr.value<TypeKind::VARCHAR>();
       sLiteralExpr->set_allocated_string(&vCharValue);
+      break;
+    }
+    case velox::TypeKind::BIGINT: {
+      sLiteralExpr->set_i64(vConstExpr.value<TypeKind::BIGINT>());
+      break;
+    }
+    case velox::TypeKind::INTEGER:{
+      sLiteralExpr->set_i32(vConstExpr.value<TypeKind::INTEGER>());
+      break;
+    }
+    case velox::TypeKind::SMALLINT:{
+      sLiteralExpr->set_i16(vConstExpr.value<TypeKind::INTEGER>());
+      break;
+    }
+    case velox::TypeKind::TINYINT:{
+      sLiteralExpr->set_i8(vConstExpr.value<TypeKind::INTEGER>());
+      break;
+    }
+    case velox::TypeKind::BOOLEAN:{
+      sLiteralExpr->set_boolean(vConstExpr.value<TypeKind::BOOLEAN>());
+      break;
+    }
+    case velox::TypeKind::REAL:{
+      sLiteralExpr->set_fp32(vConstExpr.value<TypeKind::REAL>());
       break;
     }
     default:

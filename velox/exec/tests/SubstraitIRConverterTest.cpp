@@ -36,10 +36,51 @@ class SubstraitIRConverterTest : public OperatorTestBase {
 
   void assertVeloxSubstraitRoundTripFilter(
       std::vector<RowVectorPtr>&& vectors,
-      const std::string& filter = "c1 % 10  > 0") {
-    auto plan = PlanBuilder().values(vectors).filter(filter).planNode();
+      const std::string& filter =
+          "(c2 < 1000) and (c1 between 0.6 and 1.6) and (c0 >= 100)") {
+    auto vPlan = PlanBuilder().values(vectors).filter(filter).planNode();
 
-    assertQuery(plan, "SELECT * FROM tmp WHERE " + filter);
+    assertQuery(vPlan, "SELECT * FROM tmp WHERE " + filter);
+
+    auto message = vPlan->toString(true, true);
+    LOG(INFO)
+        << "Before transform, velox plan in assertVeloxSubstraitRoundTripFilter is: \n"
+        << message << std::endl;
+
+    sIRConver->toSubstraitIR(vPlan, *sPlan);
+    LOG(INFO)
+        << "After transform from velox, substrait plan in assertVeloxSubstraitRoundTripFilter is :"
+        << std::endl;
+    sPlan->PrintDebugString();
+
+    // Convert back
+    std::shared_ptr<const PlanNode> vPlan2 = sIRConver->fromSubstraitIR(*sPlan);
+    auto mesage2 = vPlan2->toString(true, true);
+    LOG(INFO)
+        << "After transform from substrait, velox plan in assertVeloxSubstraitRoundTripFilter is :\n"
+        << mesage2 << std::endl;
+
+    assertQuery(vPlan2, "SELECT * FROM tmp WHERE " + filter);
+  }
+
+  void assertVeloxToSubstraitFilter(
+      std::vector<RowVectorPtr>&& vectors,
+      const std::string& filter =
+          "(c2 < 1000) and (c1 between 0.6 and 1.6) and (c0 >= 100)") {
+    auto vPlan = PlanBuilder().values(vectors).filter(filter).planNode();
+
+    assertQuery(vPlan, "SELECT * FROM tmp WHERE " + filter);
+
+    auto message = vPlan->toString(true, true);
+    LOG(INFO)
+        << "Before transform, velox plan in assertVeloxToSubstraitFilter is: \n"
+        << message << std::endl;
+
+    sIRConver->toSubstraitIR(vPlan, *sPlan);
+    LOG(INFO)
+        << "After transform from velox, substrait plan in assertVeloxToSubstraitFilter is :"
+        << std::endl;
+    sPlan->PrintDebugString();
   }
 
   void assertVeloxSubstraitRoundTripProject(
@@ -189,14 +230,26 @@ TEST_F(SubstraitIRConverterTest, veloxToSubstraitProjectNode) {
 
 TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripFilterNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
+  for (int32_t i = 0; i < 3; ++i) {
     auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
+        BatchMaker::createBatch(rowType_, 2, *pool_));
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
 
   assertVeloxSubstraitRoundTripFilter(std::move(vectors));
+}
+
+TEST_F(SubstraitIRConverterTest, veloxToSubstraitFilterNode) {
+  std::vector<RowVectorPtr> vectors;
+  for (int32_t i = 0; i < 3; ++i) {
+    auto vector = std::dynamic_pointer_cast<RowVector>(
+        BatchMaker::createBatch(rowType_, 2, *pool_));
+    vectors.push_back(vector);
+  }
+  createDuckDbTable(vectors);
+
+  assertVeloxToSubstraitFilter(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, filterProject) {
