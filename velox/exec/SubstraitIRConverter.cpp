@@ -23,6 +23,7 @@ namespace facebook::velox {
 // Public API:
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan &sPlan) {
+  initFunctionMap();
   return fromSubstraitIR(sPlan, 0);
 }
 
@@ -37,7 +38,6 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan &sPlan,
     int depth) {
-  initFunctionMap(const_cast<io::substrait::Plan &>(sPlan));
   const io::substrait::Rel &sRel = sPlan.relations(depth);
   return fromSubstraitIR(sRel, depth);
 }
@@ -67,20 +67,16 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
   }
 }
 
-void SubstraitVeloxConvertor::initFunctionMap(io::substrait::Plan &sPlan) {
-  for (auto &sMap: sPlan.mappings()) {
-    if (!sMap.has_function_mapping()) {
-      continue;
+void SubstraitVeloxConvertor::initFunctionMap() {
+    for (auto sFunMap :function_map){
+      functions_map[sFunMap.second] = sFunMap.first;
     }
-    auto &sFunMap = sMap.function_mapping();
-    functions_map[sFunMap.function_id().id()] = sFunMap.name();
-  }
 }
 
 std::string SubstraitVeloxConvertor::FindFunction(uint64_t id) {
   if (functions_map.find(id) == functions_map.end()) {
     throw std::runtime_error(
-        "Could not find aggregate function " + std::to_string(id));
+        "Could not find function with id :" + std::to_string(id));
   }
   return functions_map[id];
 }
@@ -154,13 +150,13 @@ std::shared_ptr<FilterNode> SubstraitVeloxConvertor::transformSFilter(
   const io::substrait::FilterRel &sFilter = sRel.filter();
   if (!sFilter.has_condition()) {
     return std::make_shared<FilterNode>(
-        std::to_string(depth), nullptr, fromSubstraitIR(sRel, depth + 1));
+        std::to_string(depth), nullptr, fromSubstraitIR(sFilter.input(), depth + 1));
   }
   const io::substrait::Expression &sExpr = sFilter.condition();
   return std::make_shared<FilterNode>(
       std::to_string(depth),
       transformSExpr(sExpr, sGlobalMapping),
-      fromSubstraitIR(sRel, depth + 1));
+      fromSubstraitIR(sFilter.input(), depth + 1));
 }
 
 std::shared_ptr<const ITypedExpr>
@@ -861,7 +857,9 @@ void SubstraitVeloxConvertor::toSubstraitIR(
   // TODO register function mapping
   // Assume only accepts a single plan fragment
   io::substrait::Rel *sRel = sPlan.add_relations();
+  io::substrait::Extensions_Extension *sExtension = sPlan.add_extensions();
   toSubstraitIR(vPlan, sRel);
+  //toSubstraitIR(vPlan, sRel,sExtension);
 }
 
 // =========   Private APIs for making Velox operators   =========
@@ -870,6 +868,8 @@ void SubstraitVeloxConvertor::toSubstraitIR(
 * @param planNode
 * @param srel
 */
+//,
+//    io::substrait::Extensions_Extension *sExtension
 void SubstraitVeloxConvertor::toSubstraitIR(
     std::shared_ptr<const PlanNode> vPlanNode,
     io::substrait::Rel *sRel) {

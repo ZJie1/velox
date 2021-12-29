@@ -54,6 +54,7 @@ class SubstraitIRConverterTest : public OperatorTestBase {
 
 
   //filter("(c2 < 1000) and (c1 between 0.6 and 1.6) and (c0 >= 100)")
+  //std::string &filter = "c1 % 10  > 0"
   void assertFilter(
       std::vector<RowVectorPtr> &&vectors,
       const std::string &filter = "c1 % 10  > 0") {
