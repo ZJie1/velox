@@ -157,6 +157,7 @@ class SubstraitVeloxConvertor {
   std::unordered_map<uint64_t, std::string> functions_map;
   std::unordered_map<std::string, uint64_t> function_map;
   uint64_t last_function_id = 0;
+  io::substrait::Plan plan;
 
   io::substrait::Type_NamedStruct *sGlobalMapping = new io::substrait::Type_NamedStruct();
   std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool = velox::memory::getDefaultScopedMemoryPool();

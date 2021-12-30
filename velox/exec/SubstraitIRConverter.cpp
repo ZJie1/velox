@@ -68,9 +68,13 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
 }
 
 void SubstraitVeloxConvertor::initFunctionMap() {
-    for (auto sFunMap :function_map){
-      functions_map[sFunMap.second] = sFunMap.first;
+  for (auto& sMap : plan.mappings()) {
+    if (!sMap.has_function_mapping()) {
+      continue;
     }
+    auto& sFunMap = sMap.function_mapping();
+    functions_map[sFunMap.function_id().id()] = sFunMap.name();
+  }
 }
 
 std::string SubstraitVeloxConvertor::FindFunction(uint64_t id) {
