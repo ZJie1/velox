@@ -91,7 +91,7 @@ class SubstraitVeloxConvertor {
       const io::substrait::Rel& sRel,
       int depth);
 
-  void initFunctionMap(io::substrait::Plan& sPlan);
+  void initFunctionMap();
   std::string FindFunction(uint64_t id);
 
   velox::TypePtr substraitTypeToVelox(const io::substrait::Type& sType);
