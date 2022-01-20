@@ -42,6 +42,24 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
   return fromSubstraitIR(sRel, depth);
 }
 
+void SubstraitVeloxConvertor::initFunctionMap() {
+  for (auto& sMap : plan.mappings()) {
+    if (!sMap.has_function_mapping()) {
+      continue;
+    }
+    auto& sFunMap = sMap.function_mapping();
+    functions_map[sFunMap.function_id().id()] = sFunMap.name();
+  }
+}
+
+std::string SubstraitVeloxConvertor::FindFunction(uint64_t id) {
+  if (functions_map.find(id) == functions_map.end()) {
+    throw std::runtime_error(
+        "Could not find function with id :" + std::to_string(id));
+  }
+  return functions_map[id];
+}
+
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Rel &sRel,
     int depth) {
@@ -65,24 +83,6 @@ std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
       throw std::runtime_error(
           "Unsupported relation type " + std::to_string(sRel.RelType_case()));
   }
-}
-
-void SubstraitVeloxConvertor::initFunctionMap() {
-  for (auto& sMap : plan.mappings()) {
-    if (!sMap.has_function_mapping()) {
-      continue;
-    }
-    auto& sFunMap = sMap.function_mapping();
-    functions_map[sFunMap.function_id().id()] = sFunMap.name();
-  }
-}
-
-std::string SubstraitVeloxConvertor::FindFunction(uint64_t id) {
-  if (functions_map.find(id) == functions_map.end()) {
-    throw std::runtime_error(
-        "Could not find function with id :" + std::to_string(id));
-  }
-  return functions_map[id];
 }
 
 velox::TypePtr SubstraitVeloxConvertor::substraitTypeToVelox(
@@ -149,77 +149,123 @@ velox::TypePtr SubstraitVeloxConvertor::substraitTypeToVelox(
 }
 
 std::shared_ptr<FilterNode> SubstraitVeloxConvertor::transformSFilter(
-    const io::substrait::Rel &sRel,
+    const io::substrait::Rel& sRel,
     int depth) {
-  const io::substrait::FilterRel &sFilter = sRel.filter();
+  const io::substrait::FilterRel& sFilter = sRel.filter();
+  std::shared_ptr<const PlanNode> vSource =
+      fromSubstraitIR(sFilter.input(), depth + 1);
   if (!sFilter.has_condition()) {
     return std::make_shared<FilterNode>(
-        std::to_string(depth), nullptr, fromSubstraitIR(sFilter.input(), depth + 1));
+        std::to_string(depth), nullptr, vSource);
   }
-  const io::substrait::Expression &sExpr = sFilter.condition();
+  const io::substrait::Expression& sExpr = sFilter.condition();
   return std::make_shared<FilterNode>(
-      std::to_string(depth),
-      transformSExpr(sExpr, sGlobalMapping),
-      fromSubstraitIR(sFilter.input(), depth + 1));
+      std::to_string(depth), transformSExpr(sExpr, sGlobalMapping), vSource);
 }
 
 std::shared_ptr<const ITypedExpr>
 SubstraitVeloxConvertor::transformSLiteralExpr(
     const io::substrait::Expression_Literal &sLiteralExpr) {
+  variant sLiteralExprVariant = transformSLiteralType(sLiteralExpr);
+  return std::make_shared<ConstantTypedExpr>(sLiteralExprVariant);
+}
+
+/*std::string SubstraitVeloxConvertor::processSubstraitNullValue(
+    io::substrait::Expression_Literal& sLiteralExpr) {
+
+  io::substrait::Type nullValue = sLiteralExpr.null();
+  // nullValue.string();
+  // variant vType =  substraitTypeToVelox(nullValue);
+  // return std::make_shared<ConstantTypedExpr>(NULL);
+  // TODO for debug
+  auto tmp = nullValue.kind_case(); // 22 varchar
+  std::cout
+      << "for kNull in transformSLiteralExpr, the nullValue.NULLABLE we get is : "
+      << nullValue.NULLABLE
+      << "\n and the kind_case that we pass to velox::variant is " << tmp
+      << std::endl;
+  io::substrait::Type_VarChar tmp2 = nullValue.varchar();
+  tmp2.GetTypeName();
+  auto tmp3= substraitTypeToVelox(nullValue);
+
+}*/
+
+variant SubstraitVeloxConvertor::transformSLiteralType(
+    const io::substrait::Expression_Literal& sLiteralExpr) {
   switch (sLiteralExpr.literal_type_case()) {
     case io::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
-      // TODO cast to double
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.decimal()));
+      return velox::variant(sLiteralExpr.decimal());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kString: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.var_char()));
+      return velox::variant(sLiteralExpr.var_char());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.boolean()));
+      return velox::variant(sLiteralExpr.boolean());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kI64: {
-      /*      return std::make_shared<ConstantTypedExpr>(
-                velox::variant(velox::TypeKind::BIGINT));*/
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.i64()));
+      return velox::variant(sLiteralExpr.i64());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kI32: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.i32()));
+      return velox::variant(sLiteralExpr.i32());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kI16: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(static_cast<int16_t>(sLiteralExpr.i16())));
-
+      return velox::variant(static_cast<int16_t>(sLiteralExpr.i16()));
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kI8: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(static_cast<int8_t>(sLiteralExpr.i8())));
+      return velox::variant(static_cast<int8_t>(sLiteralExpr.i8()));
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kFp64: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.fp64()));
+      return velox::variant(sLiteralExpr.fp64());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kFp32: {
-      return std::make_shared<ConstantTypedExpr>(
-          velox::variant(sLiteralExpr.fp32()));
+      return velox::variant(sLiteralExpr.fp32());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kNull: {
       io::substrait::Type nullValue = sLiteralExpr.null();
-      //nullValue.string();
-      //variant vType =  substraitTypeToVelox(nullValue);
-      //return std::make_shared<ConstantTypedExpr>(NULL);
-      //TODO for debug
-      auto tmp = nullValue.kind_case();
+
       std::cout
           << "for kNull in transformSLiteralExpr, the nullValue.NULLABLE we get is : "
           << nullValue.NULLABLE
-          << "\n and the kind_case that we pass to velox::variant is " << tmp
+          << "\n and the kind_case that we pass to velox::variant is " << nullValue.kind_case()
           << std::endl;
-      return std::make_shared<ConstantTypedExpr>(velox::variant(nullValue.kind_case()));
+      return processSubstraitLiteralNullType(sLiteralExpr, nullValue);
+    }
+    default:
+      throw std::runtime_error(
+          std::to_string(sLiteralExpr.literal_type_case()));
+  }
+}
+
+variant SubstraitVeloxConvertor::processSubstraitLiteralNullType(
+    const io::substrait::Expression_Literal& sLiteralExpr,
+    io::substrait::Type nullType) {
+  switch (nullType.kind_case()) {
+    case io::substrait::Type::kDecimal: {
+      return velox::variant(sLiteralExpr.decimal());
+    }
+    case io::substrait::Type::kString: {
+      return velox::variant(sLiteralExpr.var_char());
+    }
+    case io::substrait::Type::kBool: {
+      return velox::variant(sLiteralExpr.boolean());
+    }
+    case io::substrait::Type::kI64: {
+      return velox::variant(sLiteralExpr.i64());
+    }
+    case io::substrait::Type::kI32: {
+      return velox::variant(sLiteralExpr.i32());
+    }
+    case io::substrait::Type::kI16: {
+      return velox::variant(static_cast<int16_t>(sLiteralExpr.i16()));
+    }
+    case io::substrait::Type::kI8: {
+      return velox::variant(static_cast<int8_t>(sLiteralExpr.i8()));
+    }
+    case io::substrait::Type::kFp64: {
+      return velox::variant(sLiteralExpr.fp64());
+    }
+    case io::substrait::Type::kFp32: {
+      return velox::variant(sLiteralExpr.fp32());
     }
     default:
       throw std::runtime_error(
@@ -483,68 +529,307 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
 
  //  TODO for debug
     std::vector<RowVectorPtr> vectors;
-    auto batchSize = valueFieldNums / numColumns;
-    for (int32_t i = 0; i < numRows; ++i) {
-      auto vector = std::dynamic_pointer_cast<RowVector>(
-          test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
-      vectors.push_back(vector);
+    int64_t batchSize;
+    auto batchSizeMod = valueFieldNums % numColumns;
+    if (batchSizeMod == 0) {
+      batchSize = valueFieldNums / numColumns;
+    } else {
+      batchSize = valueFieldNums / numColumns + 1;
     }
 
+/*   auto rowType = ROW({"c0", "c1"}, {INTEGER(), INTEGER()});
+ * auto children = {
+        test::BatchMaker::createVector<TypeKind::INTEGER>(
+            rowType_->childAt(0), 3, *pool_),
+        BaseVector::createConstant(
+            facebook::velox::variant(TypeKind::INTEGER), 3, pool_.get()),
+    };
+    auto rowVector = std::make_shared<RowVector>(
+        pool_.get(), rowType, BufferPtr(nullptr), 3, children);
+        auto vectors = {rowVector};*/
+    // needed code start
+    std::vector<VectorPtr> children;
+    bool nullFlag = false;
+    std::shared_ptr<RowVector> rowVector;
+    for (int32_t row = 0; row < numRows; ++row) {
+      io::substrait::Expression_Literal_Struct sRowValue = sRead.virtual_table().values(row);
+      int sFieldSize = sRowValue.fields_size();
+      int vChildrenSize = vOutputType->children().size();
+      for (int col = 0; col < vChildrenSize; col++) {
+        io::substrait::Expression_Literal sField = sRowValue.fields(col*batchSize);
+        io::substrait::Expression_Literal::LiteralTypeCase sFieldType = sField.literal_type_case();//kI32
+      std::cout << "the type case " << sFieldType << std::endl;
+      std::shared_ptr<const Type> vOutputChildType = vOutputType->childAt(col);
+      TypeKind tmp1 = vOutputChildType->kind(); //TypeKind::INTEGER
+       auto tmp2 = vOutputChildType->kindName(); //INTEGER
+       auto tmp3 = vOutputChildType.get();
+      VectorPtr childrenValue;
+
+      //for the null value
+      if(sFieldType == 29){
+        nullFlag = true;
+        childrenValue = BaseVector::createConstant(
+            transformSLiteralType(sField), batchSize, pool_);
+      }else{
+        childrenValue = VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(
+            test::BatchMaker::createVector,
+            vOutputChildType->kind(),
+            vOutputType->childAt(col),
+            batchSize,
+            *scopedPool);
+
+/*        childrenValue = VELOX_DYNAMIC_TYPE_DISPATCH(
+            test::BatchMaker::createVector,
+            vOutputChildType->kind(),
+            vOutputType->childAt(col),
+            batchSize,
+            *scopedPool);*/
+/*        childrenValue = test::BatchMaker::createVector<TypeKind::INTEGER>(
+            vOutputType->childAt(col), batchSize, *scopedPool);*/
+      }
+      children.emplace_back( childrenValue);
+      }
+
+      if(nullFlag){
+        rowVector = std::make_shared<RowVector>(
+            pool_, vOutputType, BufferPtr(nullptr), batchSize, children);
+        vectors.push_back(rowVector);
+        //vectors = {rowVector};
+      }else{
+/*        auto tmp2 = children.size();
+        auto tmp = vOutputType->size();
+        rowVector = std::make_shared<RowVector>(
+            pool_, vOutputType, BufferPtr(), batchSize, children);
+        vectors.push_back(rowVector);
+        //vectors = {rowVector};*/
+        auto vector = std::dynamic_pointer_cast<RowVector>(
+            test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
+        vectors.push_back(vector);
+      }
+    }
+/*    if(nullFlag){
+      rowVector = std::make_shared<RowVector>(
+          pool_, vOutputType, BufferPtr(nullptr), batchSize, children);
+      vectors = {rowVector};
+    }*//*else{
+      auto tmp2 = children.size();
+      auto tmp = vOutputType->size();
+      rowVector = std::make_shared<RowVector>(
+          pool_, vOutputType, BufferPtr(), batchSize, children);
+      vectors = {rowVector};
+*//*      auto vector = std::dynamic_pointer_cast<RowVector>(
+          test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
+      vectors.push_back(vector);*//*
+    }*/
+
+    // needed code end
+
+
+    // TODO this is for debug start
     for (int i = 0; i<vectors.size(); i++){
       RowVectorPtr vector = vectors[i];
       numColumns = vector->childrenSize();
       for (int64_t column = 0; column < numColumns; ++column) {
         VectorPtr children = vector->childAt(column);
+
+        std::optional<vector_size_t> nullCount = children->getNullCount();
+
         std::shared_ptr<const Type> childType = children->type();
-        auto childernValue = children->values();
+        //auto childernValue = children->values();
 
         switch (childType->kind()) {
+          case velox::TypeKind::BOOLEAN: {
+            std::cout << "in the BOOLEAN=======================\n";
+            auto childToFlatVec = children->asFlatVector<bool>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                //auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "n V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
+            }
+            break;
+          }
           case velox::TypeKind::TINYINT: {
+            std::cout << "in the TINYINT=======================\n";
             auto childToFlatVec = children->asFlatVector<int8_t>();
             vector_size_t flatVecSzie = childToFlatVec->size();
-            for (int64_t i = 0; i< flatVecSzie; i++){
-              auto childFaltValue = childToFlatVec->valueAt(i);
-              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                //auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
             }
             break;
           }
           case velox::TypeKind::SMALLINT: {
-            //TODO debug
-            std::cout << "in the SAMLLINT=======================\n";
-            //std::cout << childernValue->asMutable<int16_t>() << std::endl;
-            std::cout << *childernValue->asMutable<int16_t>() << std::endl;
-            //way1
+            // TODO debug
+            std::cout << "in the SMALLINT=======================\n";
+            // std::cout << childernValue->asMutable<int16_t>() << std::endl;
+            // std::cout << *childernValue->asMutable<int16_t>() << std::endl;
+            // way1
             auto childToFlatVec = children->asFlatVector<int16_t>();
             vector_size_t flatVecSzie = childToFlatVec->size();
-            for (int64_t i = 0; i< flatVecSzie; i++){
-              auto childFaltValue = childToFlatVec->valueAt(i);
-              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                //auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
             }
             break;
           }
           case velox::TypeKind::INTEGER: {
             std::cout << "in the INTEGER=======================\n";
-            std::cout << childernValue->asMutable<int32_t>() << std::endl;
-            std::cout << *childernValue->asMutable<int32_t>() << std::endl;
+            // std::cout << childernValue->asMutable<int32_t>() << std::endl;
+            // std::cout << *childernValue->asMutable<int32_t>() << std::endl;
             auto childToFlatVec = children->asFlatVector<int32_t>();
-            vector_size_t flatVecSzie = childToFlatVec->size();
-            for (int64_t i = 0; i< flatVecSzie; i++){
-              auto childFaltValue = childToFlatVec->valueAt(i);
-              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                std::cout<< "childToFlatVec->elementSize() should be zero? "<<childToFlatVec->elementSize()<<std::endl;
+               // if(childToFlatVec->elementSize() !=0){
+                //  auto childFaltValue = childToFlatVec->valueAt(i);
+                  std::cout << "In V - S , the value in pos " << i << "is "
+                            << "go into the null of integer"<< std::endl;
+               // }
+
+              }
+            } else {
+              vector_size_t flatVecSzie = childToFlatVec->size();
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
             }
             break;
           }
           case velox::TypeKind::BIGINT: {
-            //TODO debug
+            // TODO debug
             std::cout << "in the BIGINT=======================\n";
-            std::cout << childernValue->asMutable<int64_t>() << std::endl;
-            std::cout << *childernValue->asMutable<int64_t>() << std::endl;
+            // std::cout << childernValue->asMutable<int64_t>() << std::endl;
+            // std::cout << *childernValue->asMutable<int64_t>() << std::endl;
 
             auto childToFlatVec = children->asFlatVector<int64_t>();
             vector_size_t flatVecSzie = childToFlatVec->size();
-            for (int64_t i = 0; i< flatVecSzie; i++){
-              auto childFaltValue = childToFlatVec->valueAt(i);
-              std::cout << "In V - S , the value in pos "<< i<< "is "<< childFaltValue << std::endl;
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                //auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
+            }
+            break;
+          }
+          case velox::TypeKind::REAL: {
+            std::cout << "in the REAL=======================\n";
+            // std::cout << childernValue->asMutable<float_t>() << std::endl;
+            // std::cout << *childernValue->asMutable<float_t>() << std::endl;
+            auto childToFlatVec = children->asFlatVector<float_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+               // auto childFaltValue = childToFlatVec->valueAt(i);
+               std::cout << "In V - S , the value in pos " << i << "is "
+                         << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
+            }
+            break;
+          }
+          case velox::TypeKind::DOUBLE: {
+            std::cout << "in the DOUBLE=======================\n";
+            // std::cout << childernValue->asMutable<double_t>() << std::endl;
+            // std::cout << *childernValue->asMutable<double_t>() << std::endl;
+            auto childToFlatVec = children->asFlatVector<double_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+               // auto childFaltValue = childToFlatVec->valueAt(i);
+               std::cout << "In V - S , the value in pos " << i << "is "
+                         << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
+            }
+            break;
+          }
+          case velox::TypeKind::VARCHAR: {
+            std::cout << "in the VARCHAR=======================\n";
+            // std::cout << childernValue->asMutable<StringView>() << std::endl;
+            // std::cout << *childernValue->asMutable<StringView>() <<
+            // std::endl;
+            auto childToFlatVec = children->asFlatVector<StringView>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+
+            if (nullCount.has_value()) {
+              std::cout << "in the NULL =======================\n";
+              auto tmp0 = children->type(); // BOOLEAN
+              for (int64_t i = 0; i < nullCount.value(); i++) {
+                //auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childToFlatVec->elementSize() << std::endl;
+              }
+            } else {
+              for (int64_t i = 0; i < flatVecSzie; i++) {
+                auto childFaltValue = childToFlatVec->valueAt(i);
+                std::cout << "In V - S , the value in pos " << i << "is "
+                          << childFaltValue << std::endl;
+              }
             }
             break;
           }
@@ -665,11 +950,13 @@ std::shared_ptr<ProjectNode> SubstraitVeloxConvertor::transformSProject(
   std::vector<std::shared_ptr<const ITypedExpr>> vExpressions;
   std::vector<std::string> names;
 
+  std::shared_ptr<const PlanNode> vSource = fromSubstraitIR(sProj.input(), depth + 1);
   //TODO only for debug to watch
   auto sProjExprSize = sProj.expressions_size();
   for (auto &sExpr: sProj.expressions()) {
     //TODO return need to be a ROW Type.
-    vExpressions.push_back(transformSExpr(sExpr, sGlobalMapping));
+    std::shared_ptr<const ITypedExpr> vExpr = transformSExpr(sExpr, sGlobalMapping);
+    vExpressions.push_back(vExpr);
   }
   // TODO check if there should be depth? now it's only one output_mapping, so depth = 0 is right for the simple case(proj->values)
   //sProjOutMap = sProj.common().emit().output_mapping(depth);
@@ -693,7 +980,7 @@ std::shared_ptr<ProjectNode> SubstraitVeloxConvertor::transformSProject(
       std::to_string(depth),
       names,
       vExpressions,
-      fromSubstraitIR(sProj.input(), depth + 1));
+      vSource);
   auto tmp1 = vProjNode->outputType();
 
   return vProjNode;
@@ -712,59 +999,76 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
   std::vector<std::shared_ptr<const FieldAccessTypedExpr>> groupingKeys;
   std::shared_ptr<const FieldAccessTypedExpr> groupingKey;
 
-  const io::substrait::AggregateRel &sagg = sRel.aggregate();
-  switch (sagg.phase()) {
-    case io::substrait::Expression_AggregationPhase::
-      Expression_AggregationPhase_INITIAL_TO_INTERMEDIATE: {
-      step = AggregationNode::Step::kPartial;
-      break;
-    }
-    case io::substrait::Expression_AggregationPhase::
-      Expression_AggregationPhase_INTERMEDIATE_TO_RESULT: {
-      step = AggregationNode::Step::kFinal;
-      break;
-    }
-    case io::substrait::Expression_AggregationPhase::
-      Expression_AggregationPhase_INTERMEDIATE_TO_INTERMEDIATE: {
-      step = AggregationNode::Step::kIntermediate;
-      break;
-    }
-    case io::substrait::Expression_AggregationPhase::
-      Expression_AggregationPhase_INITIAL_TO_RESULT: {
-      step = AggregationNode::Step::kSingle;
-      break;
-    }
-    default: VELOX_UNSUPPORTED("Unsupported aggregation step");
-  }
+  const io::substrait::AggregateRel &sAgg = sRel.aggregate();
+  std::shared_ptr<const PlanNode> vSource = fromSubstraitIR(sAgg.input(), depth + 1);
 
-  // TODO need to confirm sgroup.input_fields is one column or not?
-  // TODO groupings and input_fields should only one be repeated, substraitRel
-  // have both, need confirm
-  int64_t sgroupId = 0;
-  // multi grouping set
-  for (auto &sgroup: sagg.groupings()) {
-    std::string name;
-    // assume only 1?
-    for (int64_t colIndex: sgroup.input_fields()) {
-      int64_t index =
-          sagg.common().emit().output_mapping(sgroupId).index(colIndex);
-      name = sagg.common().emit().output_mapping(sgroupId).names(index);
-      io::substrait::Type stype =
-          sagg.common().emit().output_mapping(sgroupId).struct_().types(index);
-      velox::TypePtr vType = substraitTypeToVelox(stype);
-      groupingKey = std::make_shared<FieldAccessTypedExpr>(vType, name);
+  //this is for only one grouping set, GROUP BY a,b,c. Not fit for GROUPING SETS ???
+  for (auto& sGroup : sAgg.groupings()) {
+    for (auto& sExpr : sGroup.grouping_expressions()) {
+      std::shared_ptr<const ITypedExpr> vGroupingKey =
+          transformSExpr(sExpr, sGlobalMapping);
+      groupingKey =
+          std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vGroupingKey);
       groupingKeys.push_back(groupingKey);
     }
-    sgroupId++;
+
+    /*
+        //int64_t sgroupId = 0;
+        std::string name;
+        // assume only 1?
+        for (int64_t colIndex: sgroup.input_fields()) {
+          int64_t index =
+              sagg.common().emit().output_mapping(sgroupId).index(colIndex);
+          name = sagg.common().emit().output_mapping(sgroupId).names(index);
+          io::substrait::Type stype =
+              sagg.common().emit().output_mapping(sgroupId).struct_().types(index);
+          velox::TypePtr vType = substraitTypeToVelox(stype);
+          groupingKey = std::make_shared<FieldAccessTypedExpr>(vType, name);
+          groupingKeys.push_back(groupingKey);
+        }
+        sgroupId++;*/
   }
   // for velox  sum(c) is ok, but sum(c + d) is not.
-  for (auto &smeas: sagg.measures()) {
+  for (auto &sMeas: sAgg.measures()) {
+    io::substrait::Expression_AggregateFunction sMeasure = sMeas.measure();
+    if (sMeas.has_filter()) {
+      io::substrait::Expression sAggMask = sMeas.filter();
+      // handle the case sum(IF(linenumber = 7, partkey)) <=>sum(partkey) FILTER
+      // (where linenumber = 7) For each measure, an optional boolean input
+      // column that is used to mask out rows for this particular measure.
+
+      std::shared_ptr<const ITypedExpr> vAggMask =
+          transformSExpr(sAggMask, sGlobalMapping);
+      aggregateMask =
+          std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vAggMask);
+      aggregateMasks.push_back(aggregateMask);
+    }
+
     std::vector<std::shared_ptr<const ITypedExpr>> children;
     std::string out_name;
-    std::string function_name = FindFunction(smeas.measure().id().id());
+    std::string function_name = FindFunction(sMeasure.id().id());
     out_name = function_name;
-    // AggregateFunction.args
-    for (const io::substrait::Expression &sarg: smeas.measure().args()) {
+    // AggregateFunction.args should be one for velox . if not, should do project firstly
+    int64_t  sMeasureArgSize = sMeasure.args_size();
+    // the very simple case for sum(a) not very sure if this will contains the sutitation with maskExpression.
+    if (sMeasureArgSize == 1) {
+      auto vMeasureArgExpr = transformSExpr(sMeasure.args()[0], sGlobalMapping);
+      if (auto vMeasureArg =
+              std::dynamic_pointer_cast<const CallTypedExpr>(vMeasureArgExpr)) {
+        aggregates.push_back(vMeasureArg);
+        /* TODO : should be decided which aggregateNames should be
+         *  the first way is re-construct the names according the res.
+         * */
+        // debug to see if it's sum_a
+        out_name += vMeasureArg->toString();
+        aggregateNames.push_back(out_name);
+      }
+    } else { // the case for sum(a+b)
+      // TODO do project firstly
+      //  get the result of c+d then do agg
+    }
+
+    /*   for (const io::substrait::Expression &sarg: sMeasure.args()) {
       std::shared_ptr<const ITypedExpr> vexpr =
           transformSExpr(sarg, sGlobalMapping);
       children.push_back(vexpr);
@@ -773,20 +1077,46 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
 
     aggregateNames.push_back(out_name);
     aggregates.push_back(std::make_shared<const CallTypedExpr>(
-        substraitTypeToVelox(smeas.measure().output_type()),
+        substraitTypeToVelox(sMeasure.output_type()),
         move(children),
-        function_name));
+        function_name));*/
 
-    // TODO need to check with substrait community
-    // For each measure, an optional boolean input column that is used to mask
-    // out rows for this particular measure.
-    /*    for (int index : smeas.mask().index()) { // only 1?
-          io::substrait::Type stype = smeas.mask().struct_().types(index);
-          aggregateMask = std::make_shared<FieldAccessTypedExpr>(
-              substraitTypeToVelox(stype), smeas.mask().names(index));
-        }
-        aggregateMasks.push_back(aggregateMask);*/
+    switch (sMeas.measure().phase()) {
+      case io::substrait::Expression_AggregationPhase::
+          Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE: {
+        step = AggregationNode::Step::kPartial;
+        break;
+      }
+      case io::substrait::Expression_AggregationPhase::
+          Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT: {
+        step = AggregationNode::Step::kFinal;
+        break;
+      }
+      case io::substrait::Expression_AggregationPhase::
+          Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE: {
+        step = AggregationNode::Step::kIntermediate;
+        break;
+      }
+      case io::substrait::Expression_AggregationPhase::
+          Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_RESULT: {
+        step = AggregationNode::Step::kSingle;
+        break;
+      }
+      default: VELOX_UNSUPPORTED("Unsupported aggregation step");
+    }
   }
+/*// TODO one of them is ok, need to be decided
+  // the second way to get the aggregateNames
+  io::substrait::Type_NamedStruct sAggOutMap = sAgg.common().emit().output_mapping(0);
+  // the proj common is always start from 0. because the way we trans from velox to substrait.
+  int64_t sAggOutMapSize = sAggOutMap.index_size();
+  for (int64_t i = 0; i < sAggOutMapSize; i++) {
+    aggregateNames.push_back(sAggOutMap.names(i));
+  }*/
+
+  //TODO Agg don't have emit outputMapping
+  //aggregateNames != vSource->outputType()->names();
+  //need to use global variable or the first way.
 
   return std::make_shared<AggregationNode>(
       std::to_string(depth),
@@ -796,7 +1126,7 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
       aggregates,
       aggregateMasks,
       ignoreNullKeys,
-      fromSubstraitIR(sagg.input(), depth + 1));
+      vSource);
 }
 
 std::shared_ptr<OrderByNode> SubstraitVeloxConvertor::transformSSort(
@@ -808,6 +1138,8 @@ std::shared_ptr<OrderByNode> SubstraitVeloxConvertor::transformSSort(
   std::vector<std::shared_ptr<const FieldAccessTypedExpr>> sortingKeys;
   std::vector<SortOrder> sortingOrders;
   bool isPartial;
+
+  std::shared_ptr<const PlanNode> vSource = fromSubstraitIR(sSort.input(), depth + 1);
 
   isPartial = sSort.common().distribution().d_type() == 0 ? true : false;
 
@@ -844,7 +1176,7 @@ std::shared_ptr<OrderByNode> SubstraitVeloxConvertor::transformSSort(
       constSortingKeys,
       constSortingOrders,
       isPartial,
-      fromSubstraitIR(sSort.input(), depth + 1));
+      vSource);
 }
 
 // ==================   Produce substrait rel    ==================
@@ -893,7 +1225,7 @@ void SubstraitVeloxConvertor::toSubstraitIR(
   if (auto aggNode =
       std::dynamic_pointer_cast<const AggregationNode>(vPlanNode)) {
     auto sAggRel = sRel->mutable_aggregate();
-    transformVAgg(aggNode, sAggRel);
+    transformVAggregateNode(aggNode, sAggRel, sGlobalMapping);
     relCommon = sAggRel->mutable_common();
 
     // TODO this is for debug
@@ -972,6 +1304,85 @@ SubstraitVeloxConvertor::vRowTypePtrToSNamedStruct(
   return sNamedStruct;
 }
 
+io::substrait::Expression_Literal* SubstraitVeloxConvertor::processVeloxNullValue(
+    io::substrait::Expression_Literal* sField,
+    std::shared_ptr<const Type> childType) {
+  switch(childType->kind()){
+    case velox::TypeKind::BOOLEAN: {
+      io::substrait::Type_Boolean* nullValue = new io::substrait::Type_Boolean();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_bool_(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of BOOLEAN is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::TINYINT: {
+      io::substrait::Type_I8* nullValue = new io::substrait::Type_I8();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_i8(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of TINYINT is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::SMALLINT:{
+      io::substrait::Type_I16* nullValue = new io::substrait::Type_I16();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_i16(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of SMALLINT is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::INTEGER:{
+      io::substrait::Type_I32* nullValue = new io::substrait::Type_I32();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_i32(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of INTEGER is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::BIGINT:{
+      io::substrait::Type_I64* nullValue = new io::substrait::Type_I64();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_i64(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of  BIGINT is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::VARCHAR:{
+      io::substrait::Type_VarChar* nullValue = new io::substrait::Type_VarChar();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_varchar(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of VARCHAR is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::REAL:{
+      io::substrait::Type_FP32* nullValue = new io::substrait::Type_FP32();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_fp32(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of REAL is " << nullValue
+                << std::endl;
+      break;
+    }
+    case velox::TypeKind::DOUBLE:{
+      io::substrait::Type_FP64* nullValue = new io::substrait::Type_FP64();
+      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      sField->mutable_null()->set_allocated_fp64(nullValue);
+      std::cout << "In the processVeloxNullValue,  the nullValue of DOUBLE is " << nullValue
+                << std::endl;
+      break;
+    }default:{
+      throw std::runtime_error(
+          "Unsupported type " + std::string(childType->kindName()));
+    }
+
+
+  }
+
+
+  return sField;
+}
+
 void SubstraitVeloxConvertor::transformVValuesNode(
     std::shared_ptr<const ValuesNode> vValuesNode,
     io::substrait::ReadRel *sReadRel) {
@@ -1010,148 +1421,279 @@ void SubstraitVeloxConvertor::transformVValuesNode(
       // to handle the null value. TODO need to confirm
       std::optional<vector_size_t> nullCount = children->getNullCount();
 
-      if (nullCount.has_value()) {
-        io::substrait::Type *null = new io::substrait::Type;
-        null->Nullability_IsValid(0);
-        sField->set_allocated_null(null);
+/*      if (nullCount.has_value()) {
+        std::cout << "in the NULL =======================\n";
+        //TODO how to transform StringView
+        auto tmp0 = children->type();//VARCHAR
+       auto childToFlatVec =children->asFlatVector<nullptr_t>();//NULL
+        //auto childToFlatVec = children->asFlatVector<TypeTraits<TypeKind::VARCHAR>>();
+        vector_size_t flatVecSzie = childToFlatVec->size();
+
+*//*        auto strings = std::static_pointer_cast<FlatVector<StringView>>(
+            BaseVector::create(VARCHAR(), flatVecSzie, pool_));*//*
+        for (int64_t i = 0; i< flatVecSzie; i++){
+          sField = sLitValue->add_fields();
+          auto childFaltValue = childToFlatVec->valueAt(i);
+
+          //CppToType<velox::StringView>;
+*//*          const char* tmp2 = childFaltValue.data();
+          size_t tmp1 = childFaltValue.size();
+          bool tmp3 = childFaltValue.isInline();
+          bool tmp4 = childFaltValue.empty();
+          std::string tmp5=  childFaltValue.str();*//*
+          //auto tmp4 = childFaltValue.getString();
+          io::substrait::Type_VarChar * nullValue = new io::substrait::Type_VarChar();
+          nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+         // nullValue->Nullability_IsValid(0);
+         // veloxTypeToSubstrait(childFaltValue,nullValue);
+         // std::cout << "way1, the stringView value in pos "<< i<< "is "<< childFaltValue.getString() << std::endl;
+          //io::substrait::Type *nullValue = new io::substrait::Type();
+
+          //nullValue->Nullability_IsValid(0);
+          //nullValue->ParseFromString(tmp2);
+          //io::substrait::Type * sField->mutable_null();
+          //sField->mutable_null()->set_allocated_string(*tmp4);
+
+          sField->mutable_null()->set_allocated_varchar(nullValue);
+          std::cout << "way1, while the nullValue in pos "<< i<< "is "<< nullValue << std::endl;
+        }
         break;
-      }
+      }*/
       // should be the same with rowValue->type();
       std::shared_ptr<const Type> childType = children->type();
-      auto childernValue = children->values();
+     // auto childernValue = children->values();
 
       //TODO debug
-      std::cout << "childernValue is =======" << childernValue << std::endl;
+     // std::cout << "childernValue is =======" << childernValue << std::endl;
       switch (childType->kind()) {
         case velox::TypeKind::BOOLEAN: {
+          std::cout << "in the BOOLEAN=======================\n";
           auto childToFlatVec = children->asFlatVector<bool>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_boolean(childToFlatVec->valueAt(i));
+
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type(); // BOOLEAN
+            for (int64_t i = 0; i < nullCount.value(); i++) {
+              sField = sLitValue->add_fields();
+              //auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_boolean(childToFlatVec->valueAt(i));
+            }
           }
-          //sField->set_boolean(*childernValue->asMutable<bool>());
+          // sField->set_boolean(*childernValue->asMutable<bool>());
           break;
         }
         case velox::TypeKind::TINYINT: {
+          std::cout << "in the TINYINT=======================\n";
           auto childToFlatVec = children->asFlatVector<int8_t>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_i8(childToFlatVec->valueAt(i));
+
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < nullCount.value(); i++) {
+              sField = sLitValue->add_fields();
+             // auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_i8(childToFlatVec->valueAt(i));
+            }
           }
-          //sField->set_i8(*childernValue->asMutable<int8_t>());
+
+          // sField->set_i8(*childernValue->asMutable<int8_t>());
           break;
         }
         case velox::TypeKind::SMALLINT: {
-          //TODO debug
+          // TODO debug
           std::cout << "in the SAMLLINT=======================\n";
-          //std::cout << childernValue->asMutable<int16_t>() << std::endl;
-          std::cout << *childernValue->asMutable<int16_t>() << std::endl;
-          //way1
+          // std::cout << childernValue->asMutable<int16_t>() << std::endl;
+         // std::cout << *childernValue->asMutable<int16_t>() << std::endl;
+          // way1
           auto childToFlatVec = children->asFlatVector<int16_t>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_i16(childToFlatVec->valueAt(i));
+
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+             // auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_i16(childToFlatVec->valueAt(i));
+            }
           }
 
-/*          //way2
-          auto childrenValueToRange = childernValue->asMutableRange<int16_t>();
-          int rangeBegin = childrenValueToRange.begin();
-          int rangeEnd = childrenValueToRange.end();
-          for (int i = rangeBegin; i<rangeEnd;i++) {
-            auto childRangeValue = *childrenValueToRange.data();
-            std::cout << "way2, the value in pos "<< i<< "is "<< childRangeValue << std::endl;
-            sField->set_i16(*childrenValueToRange.data());
-          }*/
-          //sField->set_i16(*childernValue->asMutable<int16_t>());
+          /*          //way2
+                    auto childrenValueToRange =
+             childernValue->asMutableRange<int16_t>(); int rangeBegin =
+             childrenValueToRange.begin(); int rangeEnd =
+             childrenValueToRange.end(); for (int i = rangeBegin;
+             i<rangeEnd;i++) { auto childRangeValue =
+             *childrenValueToRange.data(); std::cout << "way2, the value in pos
+             "<< i<< "is "<< childRangeValue << std::endl;
+                      sField->set_i16(*childrenValueToRange.data());
+                    }*/
+          // sField->set_i16(*childernValue->asMutable<int16_t>());
           break;
         }
         case velox::TypeKind::INTEGER: {
           std::cout << "in the INTEGER=======================\n";
-          std::cout << childernValue->asMutable<int32_t>() << std::endl;
-          std::cout << *childernValue->asMutable<int32_t>() << std::endl;
-          //sField->set_i32(*childernValue->asMutable<int32_t>());
+          //std::cout << childernValue->asMutable<int32_t>() << std::endl;
+          //std::cout << *childernValue->asMutable<int32_t>() << std::endl;
+          // sField->set_i32(*childernValue->asMutable<int32_t>());
 
-          //way1
-          auto childToFlatVec = children->asFlatVector<int32_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_i32(childToFlatVec->valueAt(i));
+
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < nullCount.value(); i++) {
+              sField = sLitValue->add_fields();
+             // auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            // way1
+            auto childToFlatVec = children->asFlatVector<int32_t>();
+            vector_size_t flatVecSzie = childToFlatVec->size();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_i32(childToFlatVec->valueAt(i));
+            }
           }
-
-/*          //way2
-          auto childrenValueToRange = childernValue->asMutableRange<int32_t>();
-          int rangeBegin = childrenValueToRange.begin();
-          int rangeEnd = childrenValueToRange.end();
-          for (int i = rangeBegin; i<rangeEnd;i++) {
-            auto childRangeValue = *childrenValueToRange.data();
-            std::cout << "way2, the value in pos "<< i<< "is "<< childRangeValue << std::endl;
-            sField->set_i32(*childrenValueToRange.data());
-          }*/
+          /*          //way2
+                    auto childrenValueToRange =
+             childernValue->asMutableRange<int32_t>(); int rangeBegin =
+             childrenValueToRange.begin(); int rangeEnd =
+             childrenValueToRange.end(); for (int i = rangeBegin;
+             i<rangeEnd;i++) { auto childRangeValue =
+             *childrenValueToRange.data(); std::cout << "way2, the value in pos
+             "<< i<< "is "<< childRangeValue << std::endl;
+                      sField->set_i32(*childrenValueToRange.data());
+                    }*/
           break;
         }
         case velox::TypeKind::BIGINT: {
-          //TODO debug
+          // TODO debug
           std::cout << "in the BIGINT=======================\n";
-          std::cout << childernValue->asMutable<int64_t>() << std::endl;
-          std::cout << *childernValue->asMutable<int64_t>() << std::endl;
+         // std::cout << childernValue->asMutable<int64_t>() << std::endl;
+          //std::cout << *childernValue->asMutable<int64_t>() << std::endl;
 
           auto childToFlatVec = children->asFlatVector<int64_t>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_i64(childToFlatVec->valueAt(i));
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+            //  auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_i64(childToFlatVec->valueAt(i));
+            }
           }
-          //sField->set_i64(*childernValue->asMutable<int64_t>());
+          // sField->set_i64(*childernValue->asMutable<int64_t>());
           break;
         }
         case velox::TypeKind::REAL: {
+          std::cout << "in the REAL=======================\n";
           auto childToFlatVec = children->asFlatVector<float_t>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_fp32(childToFlatVec->valueAt(i));
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+             // auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_fp32(childToFlatVec->valueAt(i));
+            }
           }
-         // sField->set_fp32(*childernValue->asMutable<float_t>());
+          // sField->set_fp32(*childernValue->asMutable<float_t>());
           break;
         }
         case velox::TypeKind::DOUBLE: {
+          std::cout << "in the DOUBLE=======================\n";
           auto childToFlatVec = children->asFlatVector<double_t>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_fp64(childToFlatVec->valueAt(i));
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+           //   auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_fp64(childToFlatVec->valueAt(i));
+            }
           }
-          //sField->set_fp64(*childernValue->asMutable<double_t>());
+          // sField->set_fp64(*childernValue->asMutable<double_t>());
           break;
         }
         case velox::TypeKind::VARCHAR: {
-          auto childToFlatVec = children->asFlatVector<std::string>();
+          std::cout << "in the VARCHAR=======================\n";
+          auto childToFlatVec = children->asFlatVector<StringView>();
           vector_size_t flatVecSzie = childToFlatVec->size();
-          for (int64_t i = 0; i< flatVecSzie; i++){
-            sField = sLitValue->add_fields();
-            auto childFaltValue = childToFlatVec->valueAt(i);
-            std::cout << "way1, the value in pos "<< i<< "is "<< childFaltValue << std::endl;
-            sField->set_var_char(childToFlatVec->valueAt(i));
+          if (nullCount.has_value()) {
+            std::cout << "in the NULL =======================\n";
+            auto tmp0 = children->type();
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+           //   auto childFaltValue = childToFlatVec->valueAt(i);
+              processVeloxNullValue(sField,childType);
+            }
+          } else {
+            for (int64_t i = 0; i < flatVecSzie; i++) {
+              sField = sLitValue->add_fields();
+              auto childFaltValue = childToFlatVec->valueAt(i);
+              std::cout << "way1, the value in pos " << i << "is "
+                        << childFaltValue << std::endl;
+              sField->set_var_char(childToFlatVec->valueAt(i));
+            }
           }
-          //sField->set_var_char(*childernValue->asMutable<std::string>());
+          // sField->set_var_char(*childernValue->asMutable<std::string>());
           break;
         }
         default:
@@ -1371,15 +1913,145 @@ void SubstraitVeloxConvertor::transformVFilter(
 
 }
 
-void SubstraitVeloxConvertor::transformVAgg(
-    std::shared_ptr<const AggregationNode> vAgg,
-    io::substrait::AggregateRel *sAgg) {
-  // TODO
-  //   Construct substrait expr
-  //  transformVExpr(sfilter.mutable_condition(), vagg->filter());
+void SubstraitVeloxConvertor::transformVAggregateNode(
+    std::shared_ptr<const AggregationNode> vAggNode,
+    io::substrait::AggregateRel *sAggRel,
+    io::substrait::Type_NamedStruct* sGlobalMapping) {
+  PlanNodeId vPlanNodeId = vAggNode->id();
+  AggregationNode::Step vStep = vAggNode->step();
+  std::vector<std::shared_ptr<const FieldAccessTypedExpr>> vGroupingKeys = vAggNode->groupingKeys();
+  std::vector<std::string> vAggregateNames = vAggNode->aggregateNames();
+  std::vector<std::shared_ptr<const CallTypedExpr>> vAggregates = vAggNode->aggregates();
+  std::vector<std::shared_ptr<const FieldAccessTypedExpr>> vAggregateMasks = vAggNode->aggregateMasks();
+  //TODO now this value must be false or will fail when transfrom substrait.
+  bool vIgnoreNullKeys = vAggNode->ignoreNullKeys();
+  std::shared_ptr<const PlanNode> vSource = vAggNode->sources()[0];
+  const RowTypePtr  vOutput = vAggNode->outputType(); // this can direct mapping to substrait common emit
 
-  //   Build source
-  toSubstraitIR(vAgg->sources()[0], sAgg->mutable_input());
+  io::substrait::Rel* sAggInput = sAggRel->mutable_input();
+  toSubstraitIR(vSource,sAggInput);
+
+  io::substrait::RelCommon_Emit *sAggEmit =
+      sAggRel->mutable_common()->mutable_emit();
+  io::substrait::Type_NamedStruct *sNewOutMapping =
+      sAggEmit->add_output_mapping();
+  io::substrait::Type *sGlobalMappingStructType =
+      sGlobalMapping->mutable_struct_()->add_types();
+
+  std::cout << "print the AggregateNode Velox Output" << vOutput->toString()
+            << std::endl;
+  //set the value of substrait agg emit.
+  int64_t vOutputSize = vOutput->size();
+  int64_t vOutputChildSize = vOutput->children().size();
+  int64_t VoutputNameSize = vOutput->names().size();
+  VELOX_CHECK_EQ(vOutputSize,vOutputChildSize,"check the number of Velox Output and it's children size");
+  VELOX_CHECK_EQ(VoutputNameSize,vOutputChildSize,"check the number of Velox Output Names and Velox Output children size");
+
+  for (int i = 0; i< vOutputSize; i++){
+    sNewOutMapping->add_index(i);
+    auto vOutputName = vOutput->names().at(i);
+    sNewOutMapping->add_names(vOutputName);
+    auto vOutputchildType = vOutput->children().at(i);
+    io::substrait::Type *sOutMappingStructType =
+        sNewOutMapping->mutable_struct_()->add_types();
+    veloxTypeToSubstrait(vOutputchildType, sOutMappingStructType);
+  }
+
+  // TODO need to add the processing of the situation with GROUPING SETS
+  // or need to check what vGroupingKeys will be when there have GROUPING SETS
+  io::substrait::AggregateRel_Grouping* sAggGroupings =
+      sAggRel->add_groupings();
+  int64_t vGroupingKeysSize = vGroupingKeys.size();
+  for (int64_t i = 0; i < vGroupingKeysSize; i++) {
+    std::shared_ptr<const FieldAccessTypedExpr> vGroupingKey =
+        vGroupingKeys.at(i);
+    io::substrait::Expression* sAggGroupingExpr =
+        sAggGroupings->add_grouping_expressions();
+    transformVExpr(sAggGroupingExpr, vGroupingKey, sGlobalMapping);
+  }
+
+  //vAggregatesSize should be equal or greter than the vAggregateMasks Size
+  // two cases: 1. vAggregateMasksSize = 0, vAggregatesSize> vAggregateMasksSize
+  // 2. vAggregateMasksSize != 0, vAggregatesSize = vAggregateMasksSize
+  int64_t vAggregatesSize = vAggregates.size();
+  int64_t vAggregateMasksSize = vAggregateMasks.size();
+
+  for(int64_t i = 0 ; i< vAggregateMasksSize; i++){
+    std::shared_ptr<const FieldAccessTypedExpr> vAggMaskExpr = vAggregateMasks.at(i);
+    //to see what this will be like linenume_7_true>
+    if (vAggMaskExpr.get()){
+      std::string vAggMaskName = vAggMaskExpr->name();
+      std::shared_ptr<const Type> vAggMaskType = vAggMaskExpr->type();
+      int64_t sGlobalMappingSize = sGlobalMapping->index_size();
+      sGlobalMapping->add_index(sGlobalMappingSize + 1);
+      sGlobalMapping->add_names(vAggMaskName);
+      veloxTypeToSubstrait(vAggMaskType, sGlobalMappingStructType);
+    }
+
+  }
+
+  for (int64_t i = 0; i < vAggregatesSize; i++) {
+    io::substrait::AggregateRel_Measure* sAggMeasures = sAggRel->add_measures(); // suma, sumb sumc?
+    std::shared_ptr<const CallTypedExpr> vAggregatesExpr = vAggregates.at(i);
+    io::substrait::Expression_AggregateFunction* sAggFunction =
+        sAggMeasures->mutable_measure();
+
+    io::substrait::Expression* sAggFunctionExpr = sAggFunction->add_args();
+    transformVExpr(sAggFunctionExpr, vAggregatesExpr, sGlobalMapping);
+
+    std::string vFunName = vAggregatesExpr->name();
+    int64_t sFunId = registerSFunction(vFunName);
+    sAggFunction->mutable_id()->set_id(sFunId);
+
+    std::shared_ptr<const Type> vFunOutputType = vAggregatesExpr->type();
+    io::substrait::Type* sAggFunOutputType =
+        sAggFunction->mutable_output_type();
+    veloxTypeToSubstrait(vFunOutputType, sAggFunOutputType);
+
+    switch (vStep) {
+      case core::AggregationNode::Step::kPartial:{
+        sAggFunction->set_phase(io::substrait::Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE);
+        break;
+      }
+      case core::AggregationNode::Step::kIntermediate:{
+        sAggFunction->set_phase(io::substrait::Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE);
+        break;
+      }
+      case core::AggregationNode::Step::kSingle:{
+        sAggFunction->set_phase(io::substrait::Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_RESULT);
+        break;
+      }
+      case core::AggregationNode::Step::kFinal:{
+        sAggFunction->set_phase(io::substrait::Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
+        break;
+      }
+      default:
+        std::runtime_error(
+            "Unsupport Aggregate Step " + mapAggregationStepToName(vStep) + "in Substrait");
+    }
+
+    // add new column(the result of the aggregate) to the sGlobalMapping
+    int64_t sGlobalMappingSize = sGlobalMapping->index_size();
+    sGlobalMapping->add_index(sGlobalMappingSize + 1);
+    sGlobalMapping->add_names(vAggregatesExpr->toString());
+    veloxTypeToSubstrait(vFunOutputType, sGlobalMappingStructType);
+
+    //  TODO need to verify
+    //  transform the mask Expr if have.
+    if (vAggregateMasksSize != 0) {
+      io::substrait::Expression* sAggFilter = sAggMeasures->mutable_filter();
+      // TODO what will happened if the expr is ""?
+      std::shared_ptr<const FieldAccessTypedExpr> vAggregateMask = vAggregateMasks.at(i);
+      if(vAggregateMask.get()){
+        transformVExpr(sAggFilter, vAggregateMask, sGlobalMapping);
+      }
+    }
+    // set the value into AggFunction
+    //  use the value of vAggregateMasks and set it(the Expr) to the
+    //  sAggMeasures->mutable_filter(); the size of the filter and measure in
+    //  the substrait maybe need to be the same. or filter<=measure
+  }
+
 }
 
 // Private APIs for making expressions
@@ -1400,16 +2072,45 @@ void SubstraitVeloxConvertor:: transformVExpr(
       auto vCallTypeExpr =
           std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
     std::shared_ptr<const Type> vExprType = vCallTypeExpr->type();
-    std::vector<std::shared_ptr<const ITypedExpr>> vCallTypeInput =
+    std::vector<std::shared_ptr<const ITypedExpr>> vCallTypeInputs =
         vCallTypeExpr->inputs();
     std::string vCallTypeExprFunName = vCallTypeExpr->name();
     // different by function names.
     if (vCallTypeExprFunName == "if") {
-      io::substrait::Expression_IfThen *sFun = sExpr->mutable_if_then();
-      // TODO
+      io::substrait::Expression_IfThen* sFun = sExpr->mutable_if_then();
+
+      int64_t vCallTypeInputSize = vCallTypeInputs.size();
+      for (int64_t i = 0; i < vCallTypeInputSize; i++) {
+        std::shared_ptr<const ITypedExpr> vCallTypeInput =
+            vCallTypeInputs.at(i);
+        // TODO
+        //  need to judge according the names in the expr, and then set them to
+        //  the if or then or else expr can debug to find when process project
+        //  node
+      }
+      /*      message IfThen {
+
+        repeated IfClause ifs = 1;
+        Expression else = 2;
+
+        message IfClause {
+          Expression if = 1;
+          Expression then = 2;
+        }
+
+      }*/
     } else if (vCallTypeExprFunName == "switch") {
       io::substrait::Expression_SwitchExpression *sFun =
           sExpr->mutable_switch_expression();
+/*      message SwitchExpression {
+        repeated IfValue ifs = 1;
+        Expression else = 2;
+
+        message IfValue {
+          Expression if = 1;
+          Expression then = 2;
+        }
+      }*/
       // TODO
     } else {
       io::substrait::Expression_ScalarFunction *sFun =
@@ -1421,7 +2122,7 @@ void SubstraitVeloxConvertor:: transformVExpr(
       sFun->mutable_id()->set_id(sFunId);
 
       // int64_t tmpIndex = 1;
-      for (auto &vArg: vCallTypeInput) {
+      for (auto &vArg: vCallTypeInputs) {
         io::substrait::Expression *sArg = sFun->add_args();
         transformVExpr(sArg, vArg, sGlobalMapping);
         // tmpIndex++;
@@ -1487,8 +2188,12 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      std::basic_string<char> vCharValue = vConstExpr.value<Varchar>();
-      sLiteralExpr->set_allocated_string(&vCharValue);
+      std::basic_string<char> vCharValue = vConstExpr.value<StringView>();
+      //sLiteralExpr->set_allocated_string(&vCharValue);
+      auto tmp1 = vCharValue.data();
+      auto tmp2 = &vCharValue;
+      sLiteralExpr->set_allocated_var_char(
+          reinterpret_cast<std::string*>(vCharValue.data()));
       break;
     }
     case velox::TypeKind::BIGINT:{

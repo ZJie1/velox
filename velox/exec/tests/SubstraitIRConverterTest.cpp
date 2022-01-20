@@ -256,18 +256,44 @@ TEST_F(SubstraitIRConverterTest, filter) {
 
 TEST_F(SubstraitIRConverterTest, filterProject) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
+  for (int32_t i = 0; i < 3; ++i) {
     auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
+        BatchMaker::createBatch(rowType_, 2, *pool_));
     vectors.push_back(vector);
   }
   createDuckDbTable(vectors);
 
-  auto plan = PlanBuilder()
+  auto vPlan = PlanBuilder()
       .values(vectors)
       .filter("c1 % 10  > 0")
       .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
       .planNode();
 
-  assertQuery(plan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+  assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+
+  auto message = vPlan->toString(true, true);
+  std::cout << "vPlan before substrait trans is====================\n" << message << std::endl;
+
+  sIRConver->toSubstraitIR(vPlan, *sPlan);
+  std::cout << "sPlan is ===============" << std::endl;
+  sPlan->PrintDebugString();
+  std::string serialized;
+  if (!sPlan->SerializeToString(&serialized)) {
+    throw std::runtime_error("eek");
+  }
+
+  //splan2 is the same with sPlan. readback
+  io::substrait::Plan splan2;
+  splan2.ParseFromString(serialized);
+  std::cout << "splan2 is" << std::endl;
+  splan2.PrintDebugString();
+
+  std::shared_ptr<const PlanNode> vPlan2 = sIRConver->fromSubstraitIR(splan2);
+  auto mesage2 = vPlan2->toString(true, true);
+  std::cout << "vPlan2 trans from substrait is================\n" << mesage2 << std::endl;
+
+  assertQuery(vPlan2, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+
+  std::cout << "vPlan2  after trans from substrait and assertQuery  is================\n" << mesage2 << std::endl;
+  vPlan2->toString(true, true);
 }

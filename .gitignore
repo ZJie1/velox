@@ -284,6 +284,7 @@ cmake_build
 .cmake_build
 cmake-build-debug
 cmake-build-release
+build-Debug/*
 
 # tests
 test/test.sql

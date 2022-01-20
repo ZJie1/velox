@@ -175,6 +175,9 @@ class OperatorTestBase : public testing::Test {
     return indices;
   }
 
+  std::unique_ptr<memory::MemoryPool> pool_{
+      memory::getDefaultScopedMemoryPool()};
+
   // Helper function for comparing vector results
   template <typename T1, typename T2>
   bool
@@ -214,9 +217,6 @@ class OperatorTestBase : public testing::Test {
   std::shared_ptr<const core::ITypedExpr> parseExpr(
       const std::string& text,
       std::shared_ptr<const RowType> rowType);
-
-  std::unique_ptr<memory::MemoryPool> pool_{
-      memory::getDefaultScopedMemoryPool()};
   DuckDbQueryRunner duckDbQueryRunner_;
   velox::test::VectorMaker vectorMaker_{pool_.get()};
 

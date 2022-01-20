@@ -56,6 +56,16 @@ class SubstraitVeloxConvertor {
   std::shared_ptr<const ITypedExpr> transformSLiteralExpr(
       const io::substrait::Expression_Literal &sLiteralExpr);
 
+  std::string processSubstraitNullValue(
+      io::substrait::Expression_Literal* sField);
+
+  variant processSubstraitLiteralNullType(
+      const io::substrait::Expression_Literal& sLiteralExpr,
+      io::substrait::Type nullType);
+
+  variant transformSLiteralType(
+      const io::substrait::Expression_Literal& sLiteralExpr);
+
   std::shared_ptr<const ITypedExpr> transformSExpr(
       const io::substrait::Expression &sExpr,
       io::substrait::Type_NamedStruct *sGlobalMapping);
@@ -118,6 +128,10 @@ class SubstraitVeloxConvertor {
       std::shared_ptr<const ValuesNode> vValuesNode,
       io::substrait::ReadRel *sReadRel);
 
+  io::substrait::Expression_Literal* processVeloxNullValue(
+      io::substrait::Expression_Literal* sField,
+      std::shared_ptr<const Type> childType);
+
   void transformVProjNode(
       std::shared_ptr<const ProjectNode> vProjNode,
       io::substrait::ProjectRel *sProjRel,
@@ -142,9 +156,10 @@ class SubstraitVeloxConvertor {
 
   uint64_t registerSFunction(std::string name);
 
-  void transformVAgg(
-      std::shared_ptr<const AggregationNode> vAgg,
-      io::substrait::AggregateRel *sAgg);
+  void transformVAggregateNode(
+      std::shared_ptr<const AggregationNode> vAggNode,
+      io::substrait::AggregateRel *sAggRel,
+      io::substrait::Type_NamedStruct* sGlobalMapping);
 
   void transformVOrderBy(
       std::shared_ptr<const OrderByNode> vOrderby,

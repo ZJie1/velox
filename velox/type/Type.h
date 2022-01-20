@@ -54,7 +54,7 @@ namespace facebook::velox {
 //     information into template parameters.
 
 // Simple enum with type category.
-enum class TypeKind : int8_t {
+enum class  TypeKind : int8_t {
   BOOLEAN = 0,
   TINYINT = 1,
   SMALLINT = 2,
