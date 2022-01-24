@@ -69,11 +69,7 @@ class SubstraitAggregationTest : public AggregationTestBase {
               fromClause + " GROUP BY " + keyName);
     }
 
-    auto message = op->toString(true, true);
-    std::cout << message << std::endl;
-    sIRConver->toSubstraitIR(op, *sPlan);
-    LOG(INFO) << "Substrait Plan in testSingleKey is " << std::endl;
-    sPlan->PrintDebugString();
+    testPlanConvertorFromVelox(op, "testSingleKey");
   }
 
   void testMultiKey(
@@ -123,13 +119,46 @@ class SubstraitAggregationTest : public AggregationTestBase {
     }
 
     // transform to substrait plan
-    auto message = op->toString(true, true);
+    testPlanConvertorFromVelox(op, "testMultiKey");
+  }
+
+  void testPlanConvertorFromVelox(std::shared_ptr<core::PlanNode>& vPlan, std::string FunName) {
+    auto message = vPlan->toString(true, true);
     std::cout << message << std::endl;
-    sIRConver->toSubstraitIR(op, *sPlan);
-    LOG(INFO) << "Substrait Plan in testMultiKey is " << std::endl;
+    sIRConvertor->toSubstraitIR(vPlan, *sPlan);
+    LOG(INFO) << "Substrait Plan in  "<<FunName  <<" is " << std::endl;
     sPlan->PrintDebugString();
   }
 
+  std::shared_ptr<const PlanNode> testRoundTripPlanConvertor(std::shared_ptr<core::PlanNode>& vPlan, std::string FunName) {
+    auto message = vPlan->toString(true, true);
+    std::cout << message << std::endl;
+    sIRConvertor->toSubstraitIR(vPlan, *sPlan);
+    LOG(INFO) << "Substrait Plan in  "<<FunName  <<" is " << std::endl;
+    sPlan->PrintDebugString();
+
+    //Convert Back
+    std::shared_ptr<const PlanNode> vPlan2 = sIRConvertor->fromSubstraitIR(*sPlan);
+    auto mesage2 = vPlan2->toString(true, true);
+    LOG(INFO)
+        << "After transform from substrait, velox plan in assertVeloxSubstraitRoundTripFilter is :\n"
+        << mesage2 << std::endl;
+
+    return vPlan2;
+  }
+
+  void SetUp() override{
+    sIRConvertor = new SubstraitVeloxConvertor();
+    sPlan = new io::substrait::Plan();
+  }
+
+  void TearDown() override{
+    delete sIRConvertor;
+    delete sPlan;
+  }
+
+  SubstraitVeloxConvertor* sIRConvertor;
+  io::substrait::Plan* sPlan ;
   std::shared_ptr<const RowType> rowType_{
       ROW({"c0", "c1", "c2", "c3", "c4", "c5", "c6"},
           {BIGINT(),
@@ -140,9 +169,6 @@ class SubstraitAggregationTest : public AggregationTestBase {
            DOUBLE(),
            VARCHAR()})};
   folly::Random::DefaultGenerator rng_;
-
-  SubstraitVeloxConvertor* sIRConver = new SubstraitVeloxConvertor();
-  io::substrait::Plan* sPlan = new io::substrait::Plan();
 };
 
 TEST_F(SubstraitAggregationTest, global) {
@@ -178,6 +204,9 @@ TEST_F(SubstraitAggregationTest, global) {
   assertQuery(
       op,
       "SELECT sum(15), sum(c1), sum(c2), sum(c4), sum(c5), min(15), min(c1), min(c2), min(c3), min(c4), min(c5), max(15), max(c1), max(c2), max(c3), max(c4), max(c5) FROM tmp");
+
+  testPlanConvertorFromVelox(op, "global");
+
 }
 
 TEST_F(SubstraitAggregationTest, singleBigintKey) {
@@ -249,11 +278,7 @@ TEST_F(SubstraitAggregationTest, aggregateOfNulls) {
   assertQuery(
       vPlan, "SELECT c0, sum(c1), min(c1), max(c1) FROM tmp GROUP BY c0");
 
-  auto message = vPlan->toString(true, true);
-  LOG(INFO) << message << std::endl;
-  sIRConver->toSubstraitIR(vPlan, *sPlan);
-  LOG(INFO) << "Substrait Plan in aggregateOfNulls  is " << std::endl;
-  sPlan->PrintDebugString();
+  testPlanConvertorFromVelox(vPlan, "aggregateOfNulls");
 
   // global aggregation
   auto op = PlanBuilder()
@@ -266,12 +291,7 @@ TEST_F(SubstraitAggregationTest, aggregateOfNulls) {
                     false)
                 .planNode();
   assertQuery(op, "SELECT sum(c1), min(c1), max(c1) FROM tmp");
-  auto message1 = op->toString(true, true);
-  LOG(INFO) << message1 << std::endl;
-  sIRConver->toSubstraitIR(op, *sPlan);
-  LOG(INFO) << "Substrait Plan in aggregateOfNulls without groupingKey is "
-            << std::endl;
-  sPlan->PrintDebugString();
+  testPlanConvertorFromVelox(vPlan, "aggregateOfNulls without groupby");
 }
 
 } // namespace
