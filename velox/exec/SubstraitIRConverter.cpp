@@ -1304,6 +1304,19 @@ SubstraitVeloxConvertor::vRowTypePtrToSNamedStruct(
   return sNamedStruct;
 }
 
+io::substrait::Expression_Literal_Struct*
+SubstraitVeloxConvertor::processVeloxNullValueByCount(
+    std::shared_ptr<const Type> childType,
+    std::optional<vector_size_t> nullCount,
+    io::substrait::Expression_Literal_Struct* sLitValue,
+    io::substrait::Expression_Literal* sField) {
+  for (int64_t i = 0; i < nullCount.value(); i++) {
+    sField = sLitValue->add_fields();
+    processVeloxNullValue(sField, childType);
+  }
+  return sLitValue;
+}
+
 io::substrait::Expression_Literal* SubstraitVeloxConvertor::processVeloxNullValue(
     io::substrait::Expression_Literal* sField,
     std::shared_ptr<const Type> childType) {
@@ -1474,11 +1487,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type(); // BOOLEAN
-            for (int64_t i = 0; i < nullCount.value(); i++) {
-              sField = sLitValue->add_fields();
-              //auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1499,11 +1509,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < nullCount.value(); i++) {
-              sField = sLitValue->add_fields();
-             // auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1529,11 +1536,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-             // auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1567,11 +1571,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < nullCount.value(); i++) {
-              sField = sLitValue->add_fields();
-             // auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             // way1
             auto childToFlatVec = children->asFlatVector<int32_t>();
@@ -1607,11 +1608,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-            //  auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1631,11 +1629,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-             // auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1655,11 +1650,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-           //   auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
@@ -1679,11 +1671,8 @@ void SubstraitVeloxConvertor::transformVValuesNode(
           if (nullCount.has_value()) {
             std::cout << "in the NULL =======================\n";
             auto tmp0 = children->type();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-           //   auto childFaltValue = childToFlatVec->valueAt(i);
-              processVeloxNullValue(sField,childType);
-            }
+            processVeloxNullValueByCount(
+                childType, nullCount, sLitValue, sField);
           } else {
             for (int64_t i = 0; i < flatVecSzie; i++) {
               sField = sLitValue->add_fields();
