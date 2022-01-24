@@ -31,45 +31,116 @@ namespace {
 
 class SubstraitAggregationTest : public AggregationTestBase {
  protected:
+  void assertQueryInTestSingleKey(
+      std::shared_ptr<core::PlanNode>& vPlan,
+      const std::string& keyName,
+      bool ignoreNullKeys,
+      bool distinct) {
+    std::string fromClause = "FROM tmp";
+    if (ignoreNullKeys) {
+      fromClause += " WHERE " + keyName + " IS NOT NULL";
+    }
+    if (distinct) {
+      assertQuery(vPlan, "SELECT distinct " + keyName + " " + fromClause);
+    } else {
+      assertQuery(
+          vPlan,
+          "SELECT " + keyName +
+              ", sum(15), sum(cast(0.1 as double)), sum(c1), sum(c2), sum(c4), sum(c5) , min(15), min(0.1), min(c1), min(c2), min(c3), min(c4), min(c5), max(15), max(0.1), max(c1), max(c2), max(c3), max(c4), max(c5) " +
+              fromClause + " GROUP BY " + keyName);
+    }
+  }
+
+  void assertQueryInTestMultiKey(
+      std::shared_ptr<core::PlanNode>& vPlan,
+      bool ignoreNullKeys,
+      bool distinct) {
+    std::string fromClause = "FROM tmp";
+    if (ignoreNullKeys) {
+      fromClause +=
+          " WHERE c0 IS NOT NULL AND c1 IS NOT NULL AND c6 IS NOT NULL";
+    }
+    if (distinct) {
+      assertQuery(vPlan, "SELECT distinct c0, c1, c6 " + fromClause);
+    } else {
+      assertQuery(
+          vPlan,
+          "SELECT c0, c1, c6, sum(15), sum(cast(0.1 as double)), sum(c4), sum(c5), min(15), min(0.1), min(c3), min(c4), min(c5), max(15), max(0.1), max(c3), max(c4), max(c5) " +
+              fromClause + " GROUP BY c0, c1, c6");
+    }
+  }
+
   void testPlanConvertorFromVelox(
       std::shared_ptr<core::PlanNode>& vPlan,
       std::string FunName) {
     auto message = vPlan->toString(true, true);
     std::cout << message << std::endl;
     sIRConvertor->toSubstraitIR(vPlan, *sPlan);
-    std::cout << "Substrait Plan in  " << FunName << " is ==================== "<<std::endl;
+    std::cout << "Substrait Plan in  " << FunName
+              << " is ==================== " << std::endl;
     sPlan->PrintDebugString();
   }
 
-  std::shared_ptr<const PlanNode> testRoundTripPlanConvertor(std::shared_ptr<core::PlanNode>& vPlan, std::string FunName) {
-       auto message = vPlan->toString(true, true);
-        std::cout << message << std::endl;
-        sIRConvertor->toSubstraitIR(vPlan, *sPlan);
-        std::cout << "Substrait Plan in  "<<FunName  <<" is =====================" << std::endl;
-        sPlan->PrintDebugString();
+  std::shared_ptr<const PlanNode> testRoundTripPlanConvertor(
+      std::shared_ptr<core::PlanNode>& vPlan,
+      std::string FunName) {
+    auto message = vPlan->toString(true, true);
+    std::cout << message << std::endl;
+    sIRConvertor->toSubstraitIR(vPlan, *sPlan);
+    std::cout << "Substrait Plan in  " << FunName
+              << " is =====================" << std::endl;
+    sPlan->PrintDebugString();
 
-            //Convert Back
-            std::shared_ptr<const PlanNode> vPlan2 = sIRConvertor->fromSubstraitIR(*sPlan);
-        auto mesage2 = vPlan2->toString(true, true);
-        std::cout
-                    << "After transform from substrait, velox plan in  "<<FunName  <<" is ======================:\n"
-                    << mesage2 << std::endl;
+    // Convert Back
+    std::shared_ptr<const PlanNode> vPlan2 =
+        sIRConvertor->fromSubstraitIR(*sPlan);
+    auto mesage2 = vPlan2->toString(true, true);
+    std::cout << "After transform from substrait, velox plan in  " << FunName
+              << " is ======================:\n"
+              << mesage2 << std::endl;
 
-            return vPlan2;
-      }
+    return vPlan2;
+  }
 
-        void SetUp() override{
-        sIRConvertor = new SubstraitVeloxConvertor();
-        sPlan = new io::substrait::Plan();
-      }
+  void SetUp() override {
+    sIRConvertor = new SubstraitVeloxConvertor();
+    sPlan = new io::substrait::Plan();
+  }
 
-        void TearDown() override{
-        delete sIRConvertor;
-        delete sPlan;
-     }
+  void TearDown() override {
+    delete sIRConvertor;
+    delete sPlan;
+  }
 
   template <typename T>
-  void testSingleKey(
+  void testVeloxToSubstraitSingleKey(
+      const std::vector<RowVectorPtr>& vectors,
+      const std::string& keyName,
+      bool ignoreNullKeys,
+      bool distinct) {
+    std::vector<std::string> aggregates;
+    if (!distinct) {
+      aggregates = {"sum(15)", "sum(0.1)", "sum(c1)",  "sum(c2)", "sum(c4)",
+                    "sum(c5)", "min(15)",  "min(0.1)", "min(c1)", "min(c2)",
+                    "min(c3)", "min(c4)",  "min(c5)",  "max(15)", "max(0.1)",
+                    "max(c1)", "max(c2)",  "max(c3)",  "max(c4)", "max(c5)"};
+    }
+
+    auto op = PlanBuilder()
+                  .values(vectors)
+                  .aggregation(
+                      {rowType_->getChildIdx(keyName)},
+                      aggregates,
+                      {},
+                      core::AggregationNode::Step::kPartial,
+                      ignoreNullKeys)
+                  .planNode();
+    assertQueryInTestSingleKey(op, keyName, ignoreNullKeys, distinct);
+    testPlanConvertorFromVelox(op, "testVeloxToSubstraitSingleKey");
+  }
+
+  template <typename T>
+  void testveloxSubstraitRoundTripSingleKey(
       const std::vector<RowVectorPtr>& vectors,
       const std::string& keyName,
       bool ignoreNullKeys,
@@ -92,38 +163,13 @@ class SubstraitAggregationTest : public AggregationTestBase {
                       ignoreNullKeys)
                   .planNode();
 
-    std::string fromClause = "FROM tmp";
-    if (ignoreNullKeys) {
-      fromClause += " WHERE " + keyName + " IS NOT NULL";
-    }
-    if (distinct) {
-      assertQuery(op, "SELECT distinct " + keyName + " " + fromClause);
-    } else {
-      assertQuery(
-          op,
-          "SELECT " + keyName +
-              ", sum(15), sum(cast(0.1 as double)), sum(c1), sum(c2), sum(c4), sum(c5) , min(15), min(0.1), min(c1), min(c2), min(c3), min(c4), min(c5), max(15), max(0.1), max(c1), max(c2), max(c3), max(c4), max(c5) " +
-              fromClause + " GROUP BY " + keyName);
-    }
-
-
-
-    testPlanConvertorFromVelox(op, "testSingleKey");
-
-/*    // readback
-    auto vPlan2 = sIRConver->fromSubstraitIR(*sPlan);
-
-    auto mesage2 = vPlan2->toString(true, true);
-    std::cout << "vPlan2 in testSingleKey trans from substrait is================\n" << mesage2 << std::endl;
-
-    io::substrait::Plan *sPlan2 = new io::substrait::Plan();
-    sIRConver->toSubstraitIR(vPlan2, *sPlan2);
-    std::cout << "sPlan2 in testSingleKey is ===============" << std::endl;
-    sPlan2->PrintDebugString();*/
-
+    assertQueryInTestSingleKey(op, keyName, ignoreNullKeys, distinct);
+    // auto vPlan2 = testRoundTripPlanConvertor(op,
+    // "testveloxSubstraitRoundTripSingleKey");
+    // assertQueryInTestSingleKey(vPlan2, keyName, ignoreNullKeys, distinct);
   }
 
-  void testMultiKey(
+  void testVeloxToSubstraitMultiKey(
       const std::vector<RowVectorPtr>& vectors,
       bool ignoreNullKeys,
       bool distinct) {
@@ -154,20 +200,7 @@ class SubstraitAggregationTest : public AggregationTestBase {
                       core::AggregationNode::Step::kPartial,
                       ignoreNullKeys)
                   .planNode();
-
-    std::string fromClause = "FROM tmp";
-    if (ignoreNullKeys) {
-      fromClause +=
-          " WHERE c0 IS NOT NULL AND c1 IS NOT NULL AND c6 IS NOT NULL";
-    }
-    if (distinct) {
-      assertQuery(op, "SELECT distinct c0, c1, c6 " + fromClause);
-    } else {
-      assertQuery(
-          op,
-          "SELECT c0, c1, c6, sum(15), sum(cast(0.1 as double)), sum(c4), sum(c5), min(15), min(0.1), min(c3), min(c4), min(c5), max(15), max(0.1), max(c3), max(c4), max(c5) " +
-              fromClause + " GROUP BY c0, c1, c6");
-    }
+    assertQueryInTestMultiKey(op,ignoreNullKeys,distinct);
 
     //transform to substrait plan
     testPlanConvertorFromVelox(op, "testMultiKey");
@@ -295,49 +328,58 @@ TEST_F(SubstraitAggregationTest, global) {
   testPlanConvertorFromVelox(op, "global");
 }
 
-TEST_F(SubstraitAggregationTest, singleBigintKey) {
+TEST_F(SubstraitAggregationTest, VeloxToSubstraitSingleBigintKey) {
   auto vectors = makeVectors(rowType_, 2, 3);
   createDuckDbTable(vectors);
-  testSingleKey<int64_t>(std::move(vectors), "c0", false, false);
-  //testSingleKey<int64_t>(std::move(vectors), "c0", true, false);
+  testVeloxToSubstraitSingleKey<int64_t>(std::move(vectors), "c0", false, false);
+  testVeloxToSubstraitSingleKey<int64_t>(std::move(vectors), "c0", true, false);
 }
 
-TEST_F(SubstraitAggregationTest, singleBigintKeyDistinct) {
+TEST_F(SubstraitAggregationTest, veloxSubstraitRoundTripSingleBigintKey) {
   auto vectors = makeVectors(rowType_, 2, 3);
   createDuckDbTable(vectors);
-  testSingleKey<int64_t>(vectors, "c0", false, true);
-  //testSingleKey<int64_t>(vectors, "c0", true, true);
+  testveloxSubstraitRoundTripSingleKey<int64_t>(
+      std::move(vectors), "c0", false, false);
+  testveloxSubstraitRoundTripSingleKey<int64_t>(
+      std::move(vectors), "c0", true, false);
 }
 
-/*TEST_F(SubstraitAggregationTest, singleStringKey) {
+TEST_F(SubstraitAggregationTest, VeloxToSubstraitSingleBigintKeyDistinct) {
   auto vectors = makeVectors(rowType_, 2, 3);
   createDuckDbTable(vectors);
-  testSingleKey<StringView>(vectors, "c6", false, false);
-  //testSingleKey<StringView>(vectors, "c6", true, false);
+  testVeloxToSubstraitSingleKey<int64_t>(vectors, "c0", false, true);
+  testVeloxToSubstraitSingleKey<int64_t>(vectors, "c0", true, true);
 }
 
-TEST_F(SubstraitAggregationTest, singleStringKeyDistinct) {
+TEST_F(SubstraitAggregationTest, veloxToSubstraitSingleStringKey) {
   auto vectors = makeVectors(rowType_, 2, 3);
   createDuckDbTable(vectors);
-  testSingleKey<StringView>(vectors, "c6", false, true);
-  //testSingleKey<StringView>(vectors, "c6", true, true);
-}*/
-
-TEST_F(SubstraitAggregationTest, multiKey) {
-  auto vectors = makeVectors(rowType_, 2, 3);
-  createDuckDbTable(vectors);
-  testMultiKey(vectors, false, false);
-  testMultiKey(vectors, true, false);
+  testVeloxToSubstraitSingleKey<StringView>(vectors, "c6", false, false);
+  testVeloxToSubstraitSingleKey<StringView>(vectors, "c6", true, false);
 }
 
-TEST_F(SubstraitAggregationTest, multiKeyDistinct) {
+TEST_F(SubstraitAggregationTest, veloxToSubstraitSingleStringKeyDistinct) {
   auto vectors = makeVectors(rowType_, 2, 3);
   createDuckDbTable(vectors);
-  testMultiKey(vectors, false, true);
-  testMultiKey(vectors, true, true);
+  testVeloxToSubstraitSingleKey<StringView>(vectors, "c6", false, true);
+  testVeloxToSubstraitSingleKey<StringView>(vectors, "c6", true, true);
 }
 
-TEST_F(SubstraitAggregationTest, aggregateOfNulls) {
+TEST_F(SubstraitAggregationTest, veloxToSubstraitMultiKey) {
+  auto vectors = makeVectors(rowType_, 2, 3);
+  createDuckDbTable(vectors);
+  testVeloxToSubstraitMultiKey(vectors, false, false);
+  testVeloxToSubstraitMultiKey(vectors, true, false);
+}
+
+TEST_F(SubstraitAggregationTest, veloxToSubstraitMultiKeyDistinct) {
+  auto vectors = makeVectors(rowType_, 2, 3);
+  createDuckDbTable(vectors);
+  testVeloxToSubstraitMultiKey(vectors, false, true);
+  testVeloxToSubstraitMultiKey(vectors, true, true);
+}
+
+TEST_F(SubstraitAggregationTest, veloxToSubstraitAggregateOfNulls) {
   auto rowType = ROW({"c0", "c1"}, {INTEGER(), INTEGER()});
 
   auto children = {
