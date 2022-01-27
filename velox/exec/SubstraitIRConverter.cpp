@@ -194,9 +194,15 @@ variant SubstraitVeloxConvertor::transformSLiteralType(
     const io::substrait::Expression_Literal& sLiteralExpr) {
   switch (sLiteralExpr.literal_type_case()) {
     case io::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
-      return velox::variant(sLiteralExpr.decimal());
+      return velox::variant(sLiteralExpr.fp64());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kString: {
+      return velox::variant(sLiteralExpr.var_char());
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kVarChar:{
+      return velox::variant(sLiteralExpr.var_char());
+    }
+    case io::substrait::Expression_Literal::LiteralTypeCase::kFixedChar:{
       return velox::variant(sLiteralExpr.var_char());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
@@ -221,13 +227,23 @@ variant SubstraitVeloxConvertor::transformSLiteralType(
       return velox::variant(sLiteralExpr.fp32());
     }
     case io::substrait::Expression_Literal::LiteralTypeCase::kNull: {
-      io::substrait::Type nullValue = sLiteralExpr.null();
+      std::cout<<"return nullptr if kNULL==========\n";
 
-      std::cout
+
+      auto tmp = sLiteralExpr.SpaceUsed();
+      auto tmp1 = fmt::internal::null<int32_t>();
+      std::cout<< "In the KI32 of KNull  fmt::internal::null<int32_t> is "<<&tmp1<<std::endl;
+
+      io::substrait::Type nullValue = sLiteralExpr.null();
+      auto tmp2 = sLiteralExpr.has_null();
+      auto tmp3 = NULL;
+      std::cout<<"In the KNull, return NULL, and the sLiteralExpr.has_null() is "<<tmp2<<"\n set tmp3 = NULL and it's value is "<<tmp3<< std::endl;
+      //return tmp3;
+/*      std::cout
           << "for kNull in transformSLiteralExpr, the nullValue.NULLABLE we get is : "
           << nullValue.NULLABLE
           << "\n and the kind_case that we pass to velox::variant is " << nullValue.kind_case()
-          << std::endl;
+          << std::endl;*/
       return processSubstraitLiteralNullType(sLiteralExpr, nullValue);
     }
     default:
@@ -253,7 +269,14 @@ variant SubstraitVeloxConvertor::processSubstraitLiteralNullType(
       return velox::variant(sLiteralExpr.i64());
     }
     case io::substrait::Type::kI32: {
+      //return nullptr;
+      //auto tmp = sLiteralExpr.SpaceUsed();
+      //auto tmp1 = fmt::internal::null<int32_t>();
+      //std::cout<< "In the KI32 of KNull  fmt::internal::null<int32_t> is "<<&tmp1<<std::endl;
+      //return velox::variant(sLiteralExpr.SpaceUsed());
       return velox::variant(sLiteralExpr.i32());
+      //return velox::variant(nullType);
+
     }
     case io::substrait::Type::kI16: {
       return velox::variant(static_cast<int16_t>(sLiteralExpr.i16()));
@@ -522,6 +545,8 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
         std::cout << "the type case " << sRead.virtual_table().values(row).fields(col).literal_type_case() << std::endl;
         std::cout << "the value for row: " << row << "col: " << col << "is :"
                   << sRead.virtual_table().values(row).fields(col).i32() << std::endl;
+      if(sRead.virtual_table().values(row).fields(col).literal_type_case() ==29)
+        std::cout<<"check whether it's null "<< sRead.virtual_table().values(row).fields(col).has_null();
       }
     }
     //TODO debug end
@@ -548,13 +573,14 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
         pool_.get(), rowType, BufferPtr(nullptr), 3, children);
         auto vectors = {rowVector};*/
     // needed code start
-    std::vector<VectorPtr> children;
+    //std::vector<VectorPtr> children;
     bool nullFlag = false;
     std::shared_ptr<RowVector> rowVector;
     for (int32_t row = 0; row < numRows; ++row) {
-      io::substrait::Expression_Literal_Struct sRowValue = sRead.virtual_table().values(row);
-      int sFieldSize = sRowValue.fields_size();
-      int vChildrenSize = vOutputType->children().size();
+      std::vector<VectorPtr> children;//2
+      io::substrait::Expression_Literal_Struct sRowValue = sRead.virtual_table().values(row);//7
+      int sFieldSize = sRowValue.fields_size();//21
+      int vChildrenSize = vOutputType->children().size();//7
       for (int col = 0; col < vChildrenSize; col++) {
         io::substrait::Expression_Literal sField = sRowValue.fields(col*batchSize);
         io::substrait::Expression_Literal::LiteralTypeCase sFieldType = sField.literal_type_case();//kI32
@@ -568,10 +594,11 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
       //for the null value
       if(sFieldType == 29){
         nullFlag = true;
-        childrenValue = BaseVector::createConstant(
-            transformSLiteralType(sField), batchSize, pool_);
+        childrenValue = BaseVector::createNullConstant(
+            vOutputChildType, batchSize, pool_);
+       // childrenValue->setNull(row,true);
       }else{
-        childrenValue = VELOX_DYNAMIC_SCALAR_TYPE_DISPATCH(
+        childrenValue = VELOX_DYNAMIC_TYPE_DISPATCH(
             test::BatchMaker::createVector,
             vOutputChildType->kind(),
             vOutputType->childAt(col),
@@ -587,7 +614,7 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
 /*        childrenValue = test::BatchMaker::createVector<TypeKind::INTEGER>(
             vOutputType->childAt(col), batchSize, *scopedPool);*/
       }
-      children.emplace_back( childrenValue);
+      children.emplace_back(childrenValue);
       }
 
       if(nullFlag){
@@ -596,15 +623,15 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
         vectors.push_back(rowVector);
         //vectors = {rowVector};
       }else{
-/*        auto tmp2 = children.size();
+        auto tmp2 = children.size();
         auto tmp = vOutputType->size();
         rowVector = std::make_shared<RowVector>(
             pool_, vOutputType, BufferPtr(), batchSize, children);
-        vectors.push_back(rowVector);
-        //vectors = {rowVector};*/
-        auto vector = std::dynamic_pointer_cast<RowVector>(
+        vectors.emplace_back(rowVector);
+        //vectors = {rowVector};
+/*        auto vector = std::dynamic_pointer_cast<RowVector>(
             test::BatchMaker::createBatch(vOutputType, batchSize, *pool_));
-        vectors.push_back(vector);
+        vectors.push_back(vector);*/
       }
     }
 /*    if(nullFlag){
@@ -717,7 +744,7 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
               std::cout << "in the NULL =======================\n";
               auto tmp0 = children->type(); // BOOLEAN
               for (int64_t i = 0; i < nullCount.value(); i++) {
-                std::cout<< "childToFlatVec->elementSize() should be zero? "<<childToFlatVec->elementSize()<<std::endl;
+                //std::cout<< "childToFlatVec->elementSize() should be zero? "<<childToFlatVec->elementSize()<<std::endl;
                // if(childToFlatVec->elementSize() !=0){
                 //  auto childFaltValue = childToFlatVec->valueAt(i);
                   std::cout << "In V - S , the value in pos " << i << "is "
@@ -814,6 +841,7 @@ std::shared_ptr<PlanNode> SubstraitVeloxConvertor::transformSRead(
             // std::cout << *childernValue->asMutable<StringView>() <<
             // std::endl;
             auto childToFlatVec = children->asFlatVector<StringView>();
+            //auto tmp1 = children->asFlatVector<Varchar>();
             vector_size_t flatVecSzie = childToFlatVec->size();
 
             if (nullCount.has_value()) {
@@ -1033,14 +1061,20 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
     io::substrait::Expression_AggregateFunction sMeasure = sMeas.measure();
     if (sMeas.has_filter()) {
       io::substrait::Expression sAggMask = sMeas.filter();
+      auto tmp = sAggMask.IsInitialized();
       // handle the case sum(IF(linenumber = 7, partkey)) <=>sum(partkey) FILTER
       // (where linenumber = 7) For each measure, an optional boolean input
       // column that is used to mask out rows for this particular measure.
+      size_t sAggMaskLength = sAggMask.ByteSizeLong();
+      if(sAggMaskLength == 0 ){
+        aggregateMask = {};
+      }else{
+        std::shared_ptr<const ITypedExpr> vAggMask =
+            transformSExpr(sAggMask, sGlobalMapping);
+        aggregateMask =
+            std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vAggMask);
 
-      std::shared_ptr<const ITypedExpr> vAggMask =
-          transformSExpr(sAggMask, sGlobalMapping);
-      aggregateMask =
-          std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vAggMask);
+      }
       aggregateMasks.push_back(aggregateMask);
     }
 
@@ -1067,19 +1101,6 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
       // TODO do project firstly
       //  get the result of c+d then do agg
     }
-
-    /*   for (const io::substrait::Expression &sarg: sMeasure.args()) {
-      std::shared_ptr<const ITypedExpr> vexpr =
-          transformSExpr(sarg, sGlobalMapping);
-      children.push_back(vexpr);
-      out_name += vexpr->toString();
-    }
-
-    aggregateNames.push_back(out_name);
-    aggregates.push_back(std::make_shared<const CallTypedExpr>(
-        substraitTypeToVelox(sMeasure.output_type()),
-        move(children),
-        function_name));*/
 
     switch (sMeas.measure().phase()) {
       case io::substrait::Expression_AggregationPhase::
@@ -1111,6 +1132,7 @@ std::shared_ptr<AggregationNode> SubstraitVeloxConvertor::transformSAggregate(
   // the proj common is always start from 0. because the way we trans from velox to substrait.
   int64_t sAggOutMapSize = sAggOutMap.index_size();
   for (int64_t i = 0; i < sAggOutMapSize; i++) {
+    auto tmp = sAggOutMap.names(i);
     aggregateNames.push_back(sAggOutMap.names(i));
   }*/
 
@@ -2172,12 +2194,12 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
     io::substrait::Expression_Literal *sLiteralExpr) {
   switch (vConstExpr.kind()) {
     case velox::TypeKind::DOUBLE: {
-      // TODO
-      sLiteralExpr->mutable_decimal()->push_back(1);
+      sLiteralExpr->set_fp64(vConstExpr.value<TypeKind::DOUBLE>());
       break;
     }
     case velox::TypeKind::VARCHAR: {
       std::basic_string<char> vCharValue = vConstExpr.value<StringView>();
+     // std::basic_string<char> vCharValue = vConstExpr.value<Varchar>();
       //sLiteralExpr->set_allocated_string(&vCharValue);
       auto tmp1 = vCharValue.data();
       auto tmp2 = &vCharValue;
@@ -2187,6 +2209,11 @@ void SubstraitVeloxConvertor::transformVConstantExpr(
     }
     case velox::TypeKind::BIGINT:{
       sLiteralExpr->set_i64(vConstExpr.value<TypeKind::BIGINT>());
+      break;
+    }
+    case velox::TypeKind::TIMESTAMP:{
+     //TODO
+      sLiteralExpr->set_timestamp(vConstExpr.value<TypeKind::TIMESTAMP>().getNanos());
       break;
     }
     default:
