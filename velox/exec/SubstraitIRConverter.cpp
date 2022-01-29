@@ -131,19 +131,32 @@ velox::TypePtr SubstraitVeloxConvertor::substraitTypeToVelox(
       velox::TypePtr listType = substraitTypeToVelox(sType.list().type());
       return velox::TypePtr(velox::ARRAY(listType));
     }
+    case io::substrait::Type::kStruct: {
+      int64_t sStructSize = sType.struct_().types_size();
+      std::vector<std::shared_ptr<const Type>> vRowChildren{};
+      std::shared_ptr<const Type> vRowChild;
+          // TODO the names now are fixed for avg partial.
+     // std::vector<std::string>&& vRowNames{"sum", "count"};
+      for (int64_t i = 0; i < sStructSize; i++) {
+        vRowChild = substraitTypeToVelox(sType.struct_().types(i));
+        vRowChildren.emplace_back(vRowChild);
+      }
+      return velox::TypePtr(velox::ROW(std::move(vRowChildren)));
+      //return velox::TypePtr(velox::ROW(std::move(vRowNames), std::move(vRowChildren)));
+
+    }
     case io::substrait::Type::kDate:
     case io::substrait::Type::kTime:
     case io::substrait::Type::kIntervalDay:
     case io::substrait::Type::kIntervalYear:
     case io::substrait::Type::kTimestampTz:
-    case io::substrait::Type::kStruct:
     case io::substrait::Type::kUserDefined:
     case io::substrait::Type::kUuid:
     default:
       throw std::runtime_error(
           "Unsupported type " + std::to_string(sType.kind_case()));
 
-      // ROW  UNKNOWN FUNCTION  OPAQUE(using NativeType = std::shared_prt<void>)
+      // UNKNOWN FUNCTION  OPAQUE(using NativeType = std::shared_prt<void>)
       // INVALID(void)
   }
 }
@@ -1965,7 +1978,13 @@ void SubstraitVeloxConvertor::transformVAggregateNode(
     auto vOutputchildType = vOutput->children().at(i);
     io::substrait::Type *sOutMappingStructType =
         sNewOutMapping->mutable_struct_()->add_types();
-    veloxTypeToSubstrait(vOutputchildType, sOutMappingStructType);
+   // if(vOutputchildType->kind() == velox::TypeKind::ROW){
+     // vRowTypePtrToSNamedStruct(
+       //   (const std::shared_ptr<const RowType>&)vOutputchildType->asRow(),sNewOutMapping);
+    //}else{
+      veloxTypeToSubstrait(vOutputchildType, sOutMappingStructType);
+    //}
+
   }
 
   // TODO need to add the processing of the situation with GROUPING SETS
@@ -2286,6 +2305,27 @@ io::substrait::Type SubstraitVeloxConvertor::veloxTypeToSubstrait(
       veloxTypeToSubstrait(vMapValueType, sMap->mutable_value());
 
       sType->set_allocated_map(sMap);
+      return *sType;
+    }
+    case velox::TypeKind::ROW:{
+     // io::substrait::Type_NamedStruct *sNamedStruct = new io::substrait::Type_NamedStruct();
+      //dauto vRow = (const std::shared_ptr<const RowType>&)vType->asRow();
+      std::vector<std::string> vRowNames = vType->asRow().names();
+      std::vector<std::shared_ptr<const Type>> vRowChildrens = vType->asRow().children();
+      int64_t  vRowSize = vType->asRow().size();
+      //SubstraitVeloxConvertor::vRowTypePtrToSNamedStruct(vRow,sNamedStruct) ;
+
+      //io::substrait::Type_Struct* sStruct=sNamedStruct->mutable_struveloxTypeToSubstraitct_();
+      io::substrait::Type_Struct* sStruct=new io::substrait::Type_Struct();
+      io::substrait::Type* sStructType;
+          for (int i=0; i<vRowSize;i++){
+            sStructType = sStruct->add_types();
+       // sNamedStruct->add_index(i);
+        //sNamedStruct->add_names(vRowNames.at(i));
+        std::shared_ptr<const Type> vRowChildren = vRowChildrens.at(i);
+        veloxTypeToSubstrait(vRowChildren,sStructType);
+      }
+      sType->set_allocated_struct_(sStruct);
       return *sType;
     }
     case velox::TypeKind::UNKNOWN:

@@ -596,24 +596,26 @@ TEST_F(SubstraitAggregationTest, veloxSubstraitRoundTripAggregateOfNulls) {
                    .values(vectors)
                    .aggregation(
                        {0},
-                       {"sum(c1)", "min(c1)", "max(c1)"},
+                       {"sum(c1)", "avg(c1)","min(c1)", "max(c1)"},
                        {},
                        core::AggregationNode::Step::kPartial,
                        false)
                    .planNode();
 
   assertQuery(
-      vPlan, "SELECT c0, sum(c1), min(c1), max(c1) FROM tmp GROUP BY c0");
+      vPlan, "SELECT c0, sum(c1), avg(c1), min(c1), max(c1) FROM tmp GROUP BY c0");
 
   // convert back
   std::shared_ptr<const PlanNode> vPlan2 = testRoundTripPlanConvertor(vPlan, "veloxSubstraitRoundTripAggregateOfNulls");
-  assertQuery(vPlan2, "SELECT c0, sum(c1), min(c1), max(c1) FROM tmp GROUP BY c0");
+  assertQuery(vPlan2, "SELECT c0, sum(c1),avg(c1), min(c1), max(c1) FROM tmp GROUP BY c0");
 
   auto message3 = vPlan2->toString(true, true);
   std::cout << "vPlan2  after trans from substrait and assertQuery is================\n" << message3 << std::endl;
 }
 
-TEST_F(SubstraitAggregationTest, veloxSubstraitRoundTripAggregateOfNullsWoGroupBy) {
+TEST_F(
+    SubstraitAggregationTest,
+    veloxSubstraitRoundTripAggregateOfNullsWoGroupBy) {
   auto rowType = ROW({"c0", "c1"}, {INTEGER(), INTEGER()});
 
   auto children = {
@@ -633,22 +635,23 @@ TEST_F(SubstraitAggregationTest, veloxSubstraitRoundTripAggregateOfNullsWoGroupB
                 .values(vectors)
                 .aggregation(
                     {},
-                    {"sum(c1)", "min(c1)", "max(c1)"},
+                    {"avg(c1)", "max(c0)", "min(c1)", "max(c1)"},
                     {},
                     core::AggregationNode::Step::kPartial,
                     false)
                 .planNode();
 
-  assertQuery(op, "SELECT sum(c1), min(c1), max(c1) FROM tmp");
-
+  assertQuery(op, "SELECT avg(c1), max(c0),min(c1), max(c1) FROM tmp");
   // convert back
 
-  std::shared_ptr<const PlanNode> vPlan3 = testRoundTripPlanConvertor(op, "veloxSubstraitRoundTripAggregateOfNulls");
-  assertQuery(vPlan3, "SELECT sum(c1), min(c1), max(c1) FROM tmp");
+  std::shared_ptr<const PlanNode> vPlan3 =
+      testRoundTripPlanConvertor(op, "veloxSubstraitRoundTripAggregateOfNulls");
+  assertQuery(vPlan3, "SELECT avg(c1), max(c0),min(c1), max(c1) FROM tmp");
 
   auto message4 = vPlan3->toString(true, true);
-  std::cout << "vPlan2  after trans from substrait and assertQuery is================\n" << message4 << std::endl;
-
+  std::cout
+      << "vPlan2  after trans from substrait and assertQuery is================\n"
+      << message4 << std::endl;
 }
 
 TEST_F(SubstraitAggregationTest, hashmodes) {
