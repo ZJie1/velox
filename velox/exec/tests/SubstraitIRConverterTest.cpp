@@ -34,6 +34,30 @@ class SubstraitIRConverterTest : public OperatorTestBase {
       ROW({"c0", "c1", "c2", "c3"},
           {INTEGER(), INTEGER(), INTEGER(), INTEGER()})};
 
+  std::vector<RowVectorPtr>
+  makeVector(int64_t size, int64_t childSize, int64_t batchSize) {
+    // childSize is the size of rowType_, the number of columns
+    //  size is the number of RowVectorPtr.
+    std::vector<RowVectorPtr> vectors;
+    for (int i = 0; i < size; i++) {
+      std::vector<VectorPtr> children;
+      for (int j = 0; j < childSize; j++) {
+        VectorPtr child = VELOX_DYNAMIC_TYPE_DISPATCH(
+            BatchMaker::createVector,
+            rowType_->childAt(j)->kind(),
+            rowType_->childAt(j),
+            batchSize,
+            *pool_);
+        children.emplace_back(child);
+      }
+
+      auto rowVector = std::make_shared<RowVector>(
+          pool_.get(), rowType_, BufferPtr(), batchSize, children);
+      vectors.emplace_back(rowVector);
+    }
+    return vectors;
+  };
+
   void assertVeloxSubstraitRoundTripFilter(
       std::vector<RowVectorPtr>&& vectors,
       const std::string& filter =
@@ -183,33 +207,21 @@ class SubstraitIRConverterTest : public OperatorTestBase {
 
 TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripValuesNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
   assertVeloxSubstraitRoundTripValues(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, veloxToSubstraitValuesNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
   assertVeloxToSubstraitValues(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripProjectNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
 
   assertVeloxSubstraitRoundTripProject(std::move(vectors));
@@ -217,11 +229,7 @@ TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripProjectNode) {
 
 TEST_F(SubstraitIRConverterTest, veloxToSubstraitProjectNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
 
   assertVeloxToSubstraitProject(std::move(vectors));
@@ -229,33 +237,21 @@ TEST_F(SubstraitIRConverterTest, veloxToSubstraitProjectNode) {
 
 TEST_F(SubstraitIRConverterTest, veloxSubstraitRoundTripFilterNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
   assertVeloxSubstraitRoundTripFilter(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, veloxToSubstraitFilterNode) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 3; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 2, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
   assertVeloxToSubstraitFilter(std::move(vectors));
 }
 
 TEST_F(SubstraitIRConverterTest, filterProject) {
   std::vector<RowVectorPtr> vectors;
-  for (int32_t i = 0; i < 10; ++i) {
-    auto vector = std::dynamic_pointer_cast<RowVector>(
-        BatchMaker::createBatch(rowType_, 100, *pool_));
-    vectors.push_back(vector);
-  }
+  vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
 
   auto plan = PlanBuilder()
