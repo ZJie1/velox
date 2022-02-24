@@ -60,7 +60,8 @@ add_library(
   VectorHasher.cpp
   SubstraitIRConverter.cpp
   SubstraitVeloxTypeConvertor.cpp
-  GlobalCommonVariable.cpp)
+  GlobalCommonVariable.cpp
+  SubstraitVeloxFuncConvertor.cpp)
 
 find_library(cider cider)
 
