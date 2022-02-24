@@ -58,7 +58,9 @@ add_library(
   Unnest.cpp
   Values.cpp
   VectorHasher.cpp
-  SubstraitIRConverter.cpp)
+  SubstraitIRConverter.cpp
+  SubstraitVeloxTypeConvertor.cpp
+  GlobalCommonVariable.cpp)
 
 find_library(cider cider)
 
