@@ -1,3 +1,4 @@
 [submodule "substrait"]
 	path = substrait
-	url = https://github.com/Intel-bigdata/substrait
+	url = https://github.com/intel-innersource/frameworks.ai.modular-sql.substrait.git
+	branch = modular_sql
