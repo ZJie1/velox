@@ -177,6 +177,7 @@ class PlanConversionTest : public virtual HiveConnectorTestBase,
       for (auto path : paths) {
         std::string currentPath = fs::current_path().c_str();
         std::string absolutePath = "file://" + currentPath + path;
+        std::cout << "absolutePath: " << absolutePath << std::endl;
         absolutePaths.push_back(absolutePath);
       }
       std::vector<u_int64_t> starts;
@@ -469,6 +470,7 @@ TEST_P(PlanConversionTest, queryTest) {
   }
   writer->close();
   // Find the Velox path according current path.
+  std::cout << "currentPath: " << currentPath << std::endl;
   std::string veloxPath;
   size_t pos = 0;
   if ((pos = currentPath.find("project")) != std::string::npos) {
@@ -479,6 +481,7 @@ TEST_P(PlanConversionTest, queryTest) {
   } else {
     throw new std::runtime_error("Current path is not a valid Velox path.");
   }
+  std::cout << "veloxPath: " << veloxPath << std::endl;
   // Begin to trigger Velox's computing with the Substrait plan.
   std::string subPlanPath =
       veloxPath + "/velox/substrait_converter/tests/sub.json";
