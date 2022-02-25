@@ -62,7 +62,8 @@ add_executable(
   FunctionSignatureBuilderTest.cpp
   UnnestTest.cpp
   SubstraitIRConverterTest.cpp
-  SubstraitAggregationTest.cpp)
+  SubstraitAggregationTest.cpp
+        SubstraitVeloxPlanConverterTest.cpp)
 
 add_test(
   NAME velox_exec_test

@@ -111,7 +111,12 @@ class SubstraitVeloxConvertor {
       velox::RowTypePtr vRow,
       io::substrait::Type_NamedStruct* sNamedStruct);
 
-  io::substrait::Expression_Literal_Struct* processVeloxNullValueByCount(
+  io::substrait::Expression_Literal* processVeloxValueByType(
+      io::substrait::Expression_Literal_Struct* sLitValue,
+      io::substrait::Expression_Literal* sField,
+      VectorPtr children);
+
+  io::substrait::Expression_Literal* processVeloxNullValueByCount(
       std::shared_ptr<const Type> childType,
       std::optional<vector_size_t> nullCount,
       io::substrait::Expression_Literal_Struct* sLitValue,

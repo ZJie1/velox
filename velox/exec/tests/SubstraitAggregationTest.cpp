@@ -19,7 +19,7 @@
 #include "velox/dwio/dwrf/test/utils/BatchMaker.h"
 #include "velox/exec/tests/PlanBuilder.h"
 
-#include "velox/exec/SubstraitIRConverter.h"
+#include "velox/exec/SubstraitVeloxPlanConvertor.h"
 
 using namespace facebook::velox::aggregate;
 using namespace facebook::velox::aggregate::test;
@@ -212,7 +212,7 @@ class SubstraitAggregationTest : public AggregationTestBase {
       std::string FunName) {
     auto message = vPlan->toString(true, true);
     std::cout << message << std::endl;
-    sIRConvertor->toSubstraitIR(vPlan, *sPlan);
+    v2SPlanConvertor->veloxToSubstraitIR(vPlan, *sPlan);
     LOG(INFO) << "Substrait Plan in  " << FunName << " is " << std::endl;
     sPlan->PrintDebugString();
   }
@@ -222,13 +222,13 @@ class SubstraitAggregationTest : public AggregationTestBase {
       std::string FunName) {
     auto message = vPlan->toString(true, true);
     std::cout << message << std::endl;
-    sIRConvertor->toSubstraitIR(vPlan, *sPlan);
+    v2SPlanConvertor->veloxToSubstraitIR(vPlan, *sPlan);
     LOG(INFO) << "Substrait Plan in  " << FunName << " is " << std::endl;
     sPlan->PrintDebugString();
 
     // Convert Back
     std::shared_ptr<const PlanNode> vPlan2 =
-        sIRConvertor->fromSubstraitIR(*sPlan);
+        s2VPlanConvertor->substraitIRToVelox(*sPlan);
     auto mesage2 = vPlan2->toString(true, true);
     LOG(INFO)
         << "After transform from substrait, velox plan in assertVeloxSubstraitRoundTripFilter is :\n"
@@ -238,12 +238,14 @@ class SubstraitAggregationTest : public AggregationTestBase {
   }
 
   void SetUp() override {
-    sIRConvertor = new SubstraitVeloxConvertor();
+    v2SPlanConvertor = new VeloxToSubstraitPlanConvertor();
+    s2VPlanConvertor = new SubstraitToVeloxPlanConvertor();
     sPlan = new io::substrait::Plan();
   }
 
   void TearDown() override {
-    delete sIRConvertor;
+    delete v2SPlanConvertor;
+    delete s2VPlanConvertor;
     delete sPlan;
   }
 
@@ -271,8 +273,10 @@ class SubstraitAggregationTest : public AggregationTestBase {
     return vectors;
   };
 
-  SubstraitVeloxConvertor* sIRConvertor;
   io::substrait::Plan* sPlan;
+  VeloxToSubstraitPlanConvertor* v2SPlanConvertor;
+  SubstraitToVeloxPlanConvertor* s2VPlanConvertor;
+
   std::shared_ptr<const RowType> rowType_{
       ROW({"c0", "c1", "c2", "c3", "c4", "c5", "c6"},
           {BIGINT(),

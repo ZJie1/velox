@@ -25,23 +25,27 @@ namespace facebook::velox {
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan& sPlan) {
   initFunctionMap();
-  return fromSubstraitIR(sPlan, 0);
+  //return fromSubstraitIR(sPlan, 0);
+  const io::substrait::Rel& sRel = sPlan.relations(0);
+  return fromSubstraitIR(sRel, 0);
 }
 
 // Private APIs:
 /**
  *
- * @param plan
+ * @param sRel means Substrait rel
  * @param depth means the plan id, assuming node is kept in inserted order. For
  * example, source is located at position 0.
  * @return
  */
+/*
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Plan& sPlan,
     int depth) {
   const io::substrait::Rel& sRel = sPlan.relations(depth);
   return fromSubstraitIR(sRel, depth);
 }
+*/
 
 std::shared_ptr<const PlanNode> SubstraitVeloxConvertor::fromSubstraitIR(
     const io::substrait::Rel& sRel,
@@ -837,7 +841,138 @@ SubstraitVeloxConvertor::vRowTypePtrToSNamedStruct(
   return sNamedStruct;
 }
 
-io::substrait::Expression_Literal_Struct*
+io::substrait::Expression_Literal*
+SubstraitVeloxConvertor::processVeloxValueByType(
+    io::substrait::Expression_Literal_Struct* sLitValue,
+    io::substrait::Expression_Literal* sField,
+    VectorPtr children) {
+  // to handle the null value. TODO need to confirm
+  std::optional<vector_size_t> nullCount = children->getNullCount();
+  // should be the same with rowValue->type();
+  std::shared_ptr<const Type> childType = children->type();
+  switch (childType->kind()) {
+    case velox::TypeKind::BOOLEAN: {
+      auto childToFlatVec = children->asFlatVector<bool>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_boolean(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::TINYINT: {
+      auto childToFlatVec = children->asFlatVector<int8_t>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_i8(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::SMALLINT: {
+      auto childToFlatVec = children->asFlatVector<int16_t>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_i16(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::INTEGER: {
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        // way1
+        auto childToFlatVec = children->asFlatVector<int32_t>();
+        vector_size_t flatVecSzie = childToFlatVec->size();
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_i32(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::BIGINT: {
+      auto childToFlatVec = children->asFlatVector<int64_t>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_i64(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::REAL: {
+      auto childToFlatVec = children->asFlatVector<float_t>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_fp32(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::DOUBLE: {
+      auto childToFlatVec = children->asFlatVector<double_t>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_fp64(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    case velox::TypeKind::VARCHAR: {
+      auto childToFlatVec = children->asFlatVector<StringView>();
+      vector_size_t flatVecSzie = childToFlatVec->size();
+      if (nullCount.has_value()) {
+        auto tmp0 = children->type();
+        sField = processVeloxNullValueByCount(
+            childType, nullCount, sLitValue, sField);
+      } else {
+        for (int64_t i = 0; i < flatVecSzie; i++) {
+          sField = sLitValue->add_fields();
+          sField->set_var_char(childToFlatVec->valueAt(i));
+        }
+      }
+      return sField;
+    }
+    default:
+      throw std::runtime_error(
+          "Unsupported type " + std::string(childType->kindName()));
+  }
+}
+
+io::substrait::Expression_Literal*
 SubstraitVeloxConvertor::processVeloxNullValueByCount(
     std::shared_ptr<const Type> childType,
     std::optional<vector_size_t> nullCount,
@@ -847,7 +982,7 @@ SubstraitVeloxConvertor::processVeloxNullValueByCount(
     sField = sLitValue->add_fields();
     processVeloxNullValue(sField, childType);
   }
-  return sLitValue;
+  return sField;
 }
 
 io::substrait::Expression_Literal*
@@ -945,131 +1080,7 @@ void SubstraitVeloxConvertor::transformVValuesNode(
       io::substrait::Expression_Literal* sField;
 
       VectorPtr children = rowValue->childAt(column);
-
-      // to handle the null value. TODO need to confirm
-      std::optional<vector_size_t> nullCount = children->getNullCount();
-      // should be the same with rowValue->type();
-      std::shared_ptr<const Type> childType = children->type();
-      switch (childType->kind()) {
-        case velox::TypeKind::BOOLEAN: {
-          auto childToFlatVec = children->asFlatVector<bool>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_boolean(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::TINYINT: {
-          auto childToFlatVec = children->asFlatVector<int8_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_i8(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::SMALLINT: {
-          auto childToFlatVec = children->asFlatVector<int16_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_i16(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::INTEGER: {
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            // way1
-            auto childToFlatVec = children->asFlatVector<int32_t>();
-            vector_size_t flatVecSzie = childToFlatVec->size();
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_i32(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::BIGINT: {
-          auto childToFlatVec = children->asFlatVector<int64_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_i64(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::REAL: {
-          auto childToFlatVec = children->asFlatVector<float_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_fp32(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::DOUBLE: {
-          auto childToFlatVec = children->asFlatVector<double_t>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_fp64(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        case velox::TypeKind::VARCHAR: {
-          auto childToFlatVec = children->asFlatVector<StringView>();
-          vector_size_t flatVecSzie = childToFlatVec->size();
-          if (nullCount.has_value()) {
-            auto tmp0 = children->type();
-            processVeloxNullValueByCount(
-                childType, nullCount, sLitValue, sField);
-          } else {
-            for (int64_t i = 0; i < flatVecSzie; i++) {
-              sField = sLitValue->add_fields();
-              sField->set_var_char(childToFlatVec->valueAt(i));
-            }
-          }
-          break;
-        }
-        default:
-          throw std::runtime_error(
-              "Unsupported type " + std::string(childType->kindName()));
-      }
+      sField = processVeloxValueByType(sLitValue,sField,children);
     }
   }
 }
