@@ -13,8 +13,29 @@
 # limitations under the License.
 add_subdirectory(utils)
 
+<<<<<<< HEAD
+=======
+add_library(velox_exec_test_lib PlanBuilder.cpp QueryAssertions.cpp Cursor.cpp
+        OperatorTestBase.cpp HiveConnectorTestBase.cpp)
+
+target_link_libraries(
+  velox_exec_test_lib
+  velox_core
+  duckdb
+  velox_parse_parser
+  velox_vector_test_lib
+  velox_duckdb_conversion
+  velox_dwio_common
+  velox_dwio_type_fbhive
+  velox_dwio_dwrf_reader
+  velox_dwrf_test_utils
+  velox_presto_serializer
+  ${GTEST_BOTH_LIBRARIES})
+
+>>>>>>> 3a5d7b06db3e0f91d9df39b92476d56b0ea29d63
 add_executable(
   velox_exec_test
+  CiderTest.cpp
   CrossJoinTest.cpp
   DriverTest.cpp
   EnforceSingleRowTest.cpp
@@ -40,10 +61,17 @@ add_executable(
   MergeTest.cpp
   MergeJoinTest.cpp
   HashJoinTest.cpp
+  HybridExecOperatorTest.cpp
   PlanNodeToStringTest.cpp
   FunctionSignatureBuilderTest.cpp
   UnnestTest.cpp
+<<<<<<< HEAD
   AssignUniqueIdTest.cpp)
+=======
+  SubstraitIRConverterTest.cpp
+  SubstraitAggregationTest.cpp
+        SubstraitVeloxPlanConverterTest.cpp)
+>>>>>>> 3a5d7b06db3e0f91d9df39b92476d56b0ea29d63
 
 add_test(
   NAME velox_exec_test
@@ -54,6 +82,11 @@ target_link_libraries(
   velox_exec_test
   velox_functions_test_lib
   velox_exec
+<<<<<<< HEAD
+=======
+  cider_exec
+  velox_dwio_dwrf_writer
+>>>>>>> 3a5d7b06db3e0f91d9df39b92476d56b0ea29d63
   velox_dwio_common
   velox_aggregates
   velox_aggregates_test_lib
@@ -81,4 +114,6 @@ target_link_libraries(
   ${gflags_LIBRARIES}
   glog::glog
   ${FMT}
-  ${FILESYSTEM})
+  ${FILESYSTEM}
+  LLVM
+  libDBEngine.so)

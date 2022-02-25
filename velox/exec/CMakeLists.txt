@@ -11,6 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+find_package(Protobuf REQUIRED)
+include_directories(${Protobuf_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+file(GLOB ProtoFiles "../../substrait/binary/*.proto")
+protobuf_generate_cpp(ProtoSources ProtoHeaders ${ProtoFiles})
+add_library(substrait SHARED ${ProtoSources} ${ProtoHeaders})
+
 add_library(
   velox_exec
   Aggregate.cpp
@@ -28,6 +37,7 @@ add_library(
   HashPartitionFunction.cpp
   HashProbe.cpp
   HashTable.cpp
+  HybridExecOperator.cpp
   JoinBridge.cpp
   Limit.cpp
   LocalPartition.cpp
@@ -49,7 +59,16 @@ add_library(
   Unnest.cpp
   Values.cpp
   VectorHasher.cpp
+<<<<<<< HEAD
   AssignUniqueId.cpp)
+=======
+  SubstraitIRConverter.cpp
+  SubstraitVeloxTypeConvertor.cpp
+  GlobalCommonVariable.cpp
+  SubstraitVeloxFuncConvertor.cpp)
+
+find_library(cider cider)
+>>>>>>> 3a5d7b06db3e0f91d9df39b92476d56b0ea29d63
 
 target_link_libraries(
   velox_exec
@@ -58,7 +77,12 @@ target_link_libraries(
   velox_connector
   velox_time
   velox_codegen
-  velox_common_base)
+  velox_common_base
+  velox_dwio_dwrf_proto
+  velox_hive_partition_function
+  substrait
+  ${Protobuf_LIBRARIES}
+  cider)
 
 if(${VELOX_BUILD_TESTING})
   add_subdirectory(tests)
