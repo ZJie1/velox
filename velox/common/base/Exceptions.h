@@ -139,9 +139,14 @@ inline const char* errorMessage(const char* s) {
   return s;
 }
 
-template <typename... Args>
+/*template <typename... Args>
 std::string errorMessage(fmt::string_view fmt, const Args&... args) {
   return fmt::vformat(fmt, fmt::make_format_args(args...));
+}*/
+
+template <typename... Args>
+std::string errorMessage(const Args&... args) {
+  return fmt::format(args...);
 }
 
 } // namespace detail
