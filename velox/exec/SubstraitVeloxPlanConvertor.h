@@ -18,9 +18,8 @@
 #include <string>
 #include <typeinfo>
 
-#include "expression.pb.h"
-#include "plan.pb.h"
-#include "relations.pb.h"
+#include "velox/substrait_converter/proto/substrait/algebra.pb.h"
+#include "velox/substrait_converter/proto/substrait/plan.pb.h"
 
 #include "connectors/hive/HiveConnector.h"
 #include "connectors/hive/HivePartitionFunction.h"
@@ -40,42 +39,42 @@ class VeloxToSubstraitPlanConvertor {
  public:
   void veloxToSubstraitIR(
       std::shared_ptr<const PlanNode> vPlan,
-      io::substrait::Plan& sPlan);
+      substrait::Plan& sPlan);
 
  private:
   void veloxToSubstraitIR(
       std::shared_ptr<const PlanNode> vPlanNode,
-      io::substrait::Rel* sRel);
+      substrait::Rel* sRel);
   void transformVFilter(
       std::shared_ptr<const FilterNode> vFilterNode,
-      io::substrait::FilterRel* sFilterRel,
-      io::substrait::Type_NamedStruct* sGlobalMapping);
+      substrait::FilterRel* sFilterRel,
+      substrait::NamedStruct* sGlobalMapping);
 
   void transformVValuesNode(
       std::shared_ptr<const ValuesNode> vValuesNode,
-      io::substrait::ReadRel* sReadRel);
+      substrait::ReadRel* sReadRel);
 
   void transformVProjNode(
       std::shared_ptr<const ProjectNode> vProjNode,
-      io::substrait::ProjectRel* sProjRel,
-      io::substrait::Type_NamedStruct* sGlobalMapping);
+      substrait::ProjectRel* sProjRel,
+      substrait::NamedStruct* sGlobalMapping);
 
   void transformVPartitionedOutputNode(
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode,
-      io::substrait::DistributeRel* sDistRel);
+      substrait::DistributeRel* sDistRel);
 
   void transformVPartitionFunc(
-      io::substrait::DistributeRel* sDistRel,
+      substrait::DistributeRel* sDistRel,
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode);
 
   void transformVAggregateNode(
       std::shared_ptr<const AggregationNode> vAggNode,
-      io::substrait::AggregateRel* sAggRel,
-      io::substrait::Type_NamedStruct* sGlobalMapping);
+      substrait::AggregateRel* sAggRel,
+      substrait::NamedStruct* sGlobalMapping);
 
   void transformVOrderBy(
       std::shared_ptr<const OrderByNode> vOrderbyNode,
-      io::substrait::SortRel* sSortRel);
+      substrait::SortRel* sSortRel);
 
   VeloxToSubstraitExprConvertor v2SExprConvertor;
   VeloxToSubstraitTypeConvertor v2STypeConvertor;
@@ -85,35 +84,35 @@ class VeloxToSubstraitPlanConvertor {
 class SubstraitToVeloxPlanConvertor {
  public:
   std::shared_ptr<const PlanNode> substraitIRToVelox(
-      const io::substrait::Plan& sPlan);
+      const substrait::Plan& sPlan);
 
  private:
   std::shared_ptr<const PlanNode> substraitIRToVelox(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::shared_ptr<FilterNode> transformSFilter(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::shared_ptr<PartitionedOutputNode> transformSDistribute(
-      const io::substrait::Plan& sPlan,
+      const substrait::Plan& sPlan,
       int depth);
 
   std::shared_ptr<PlanNode> transformSRead(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::shared_ptr<ProjectNode> transformSProject(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::shared_ptr<AggregationNode> transformSAggregate(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::shared_ptr<OrderByNode> transformSSort(
-      const io::substrait::Rel& sRel,
+      const substrait::Rel& sRel,
       int depth);
 
   std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool =

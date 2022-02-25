@@ -19,14 +19,14 @@
 namespace facebook::velox {
 
 void VeloxToSubstraitExprConvertor::transformVExpr(
-    io::substrait::Expression* sExpr,
+    substrait::Expression* sExpr,
     const std::shared_ptr<const ITypedExpr>& vExpr,
-    io::substrait::Type_NamedStruct* sGlobalMapping) {
+    substrait::NamedStruct* sGlobalMapping) {
   // TODO
   if (std::shared_ptr<const ConstantTypedExpr> vConstantExpr =
           std::dynamic_pointer_cast<const ConstantTypedExpr>(vExpr)) {
     // Literal
-    io::substrait::Expression_Literal* sLiteralExpr = sExpr->mutable_literal();
+    substrait::Expression_Literal* sLiteralExpr = sExpr->mutable_literal();
     transformVConstantExpr(vConstantExpr->value(), sLiteralExpr);
     return;
   } else if (
@@ -38,7 +38,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
     std::string vCallTypeExprFunName = vCallTypeExpr->name();
     // different by function names.
     if (vCallTypeExprFunName == "if") {
-      io::substrait::Expression_IfThen* sFun = sExpr->mutable_if_then();
+      substrait::Expression_IfThen* sFun = sExpr->mutable_if_then();
       int64_t vCallTypeInputSize = vCallTypeInputs.size();
       for (int64_t i = 0; i < vCallTypeInputSize; i++) {
         std::shared_ptr<const ITypedExpr> vCallTypeInput =
@@ -49,11 +49,11 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
         //  node
       }
     } else if (vCallTypeExprFunName == "switch") {
-      io::substrait::Expression_SwitchExpression* sFun =
+      substrait::Expression_SwitchExpression* sFun =
           sExpr->mutable_switch_expression();
       // TODO
     } else {
-      io::substrait::Expression_ScalarFunction* sFun =
+      substrait::Expression_ScalarFunction* sFun =
           sExpr->mutable_scalar_function();
       // TODO need to change yaml file to register functin, now is dummy.
       // the substrait communcity have changed many in this part...
@@ -62,10 +62,10 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
       sFun->mutable_id()->set_id(sFunId);
 
       for (auto& vArg : vCallTypeInputs) {
-        io::substrait::Expression* sArg = sFun->add_args();
+        substrait::Expression* sArg = sFun->add_args();
         transformVExpr(sArg, vArg, sGlobalMapping);
       }
-      io::substrait::Type* sFunType = sFun->mutable_output_type();
+      substrait::Type* sFunType = sFun->mutable_output_type();
       v2STypeConvertor.veloxTypeToSubstrait(vExprType, sFunType);
       return;
     }
@@ -77,7 +77,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
     const std::shared_ptr<const Type> vExprType = vFieldExpr->type();
     std::string vExprName = vFieldExpr->name();
 
-    io::substrait::ReferenceSegment_StructField* sDirectStruct =
+    substrait::ReferenceSegment_StructField* sDirectStruct =
         sExpr->mutable_selection()
             ->mutable_direct_reference()
             ->mutable_struct_field();
@@ -101,11 +101,11 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
     std::shared_ptr<const Type> vExprType = vCastExpr->type();
     std::vector<std::shared_ptr<const ITypedExpr>> vCastTypeInputs =
         vCastExpr->inputs();
-    io::substrait::Expression_Cast* sCastExpr = sExpr->mutable_cast();
+    substrait::Expression_Cast* sCastExpr = sExpr->mutable_cast();
     v2STypeConvertor.veloxTypeToSubstrait(vExprType, sCastExpr->mutable_type());
 
     for (auto& vArg : vCastTypeInputs) {
-      io::substrait::Expression* sExpr = sCastExpr->mutable_input();
+      substrait::Expression* sExpr = sCastExpr->mutable_input();
       transformVExpr(sExpr, vArg, sGlobalMapping);
     }
     return;
@@ -118,7 +118,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
 
 void VeloxToSubstraitExprConvertor::transformVConstantExpr(
     const velox::variant& vConstExpr,
-    io::substrait::Expression_Literal* sLiteralExpr) {
+    substrait::Expression_Literal* sLiteralExpr) {
   switch (vConstExpr.kind()) {
     case velox::TypeKind::DOUBLE: {
       sLiteralExpr->set_fp64(vConstExpr.value<TypeKind::DOUBLE>());
@@ -168,15 +168,15 @@ void VeloxToSubstraitExprConvertor::transformVConstantExpr(
 
 // SubstraitToVeloxExprConvertor
 std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
-    const io::substrait::Expression& sExpr,
-    io::substrait::Type_NamedStruct* sGlobalMapping) {
+    const substrait::Expression& sExpr,
+    substrait::NamedStruct* sGlobalMapping) {
   switch (sExpr.rex_type_case()) {
-    case io::substrait::Expression::RexTypeCase::kLiteral: {
+    case substrait::Expression::RexTypeCase::kLiteral: {
       auto slit = sExpr.literal();
       std::shared_ptr<const ITypedExpr> sConstant = transformSLiteralExpr(slit);
       return sConstant;
     }
-    case io::substrait::Expression::RexTypeCase::kSelection: {
+    case substrait::Expression::RexTypeCase::kSelection: {
       if (!sExpr.selection().has_direct_reference() ||
           !sExpr.selection().direct_reference().has_struct_field()) {
         throw std::runtime_error(
@@ -196,10 +196,10 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
         }
       }
     }
-    case io::substrait::Expression::RexTypeCase::kScalarFunction: {
-      io::substrait::Expression_ScalarFunction sScalarFunc =
+    case substrait::Expression::RexTypeCase::kScalarFunction: {
+      substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
       velox::TypePtr vScalaFunType =
           s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
 
@@ -216,10 +216,10 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
             vScalaFunType, children, function_name);
       }
     }
-    case io::substrait::Expression::RexTypeCase::kIfThen: {
-      io::substrait::Expression_ScalarFunction sScalarFunc =
+    case substrait::Expression::RexTypeCase::kIfThen: {
+      substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
       velox::TypePtr vScalaFunType =
           s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
 
@@ -230,10 +230,10 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
       return std::make_shared<velox::core::CallTypedExpr>(
           vScalaFunType, move(children), "if");
     }
-    case io::substrait::Expression::RexTypeCase::kSwitchExpression: {
-      io::substrait::Expression_ScalarFunction sScalarFunc =
+    case substrait::Expression::RexTypeCase::kSwitchExpression: {
+      substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      io::substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
       velox::TypePtr vScalaFunType =
           s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
       std::vector<std::shared_ptr<const ITypedExpr>> children;
@@ -243,10 +243,10 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
       return std::make_shared<velox::core::CallTypedExpr>(
           vScalaFunType, move(children), "switch");
     }
-    case io::substrait::Expression::kCast: {
-      io::substrait::Expression_Cast sCastExpr = sExpr.cast();
+    case substrait::Expression::kCast: {
+      substrait::Expression_Cast sCastExpr = sExpr.cast();
 
-      io::substrait::Type sCastType = sCastExpr.type();
+      substrait::Type sCastType = sCastExpr.type();
       std::shared_ptr<const Type> vCastType =
           s2VTypeConvertor.substraitTypeToVelox(sCastType);
 
@@ -254,7 +254,7 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
       bool nullOnFailure = false;
 
       std::vector<std::shared_ptr<const ITypedExpr>> vCastInputs;
-      io::substrait::Expression sCastInput = sCastExpr.input();
+      substrait::Expression sCastInput = sCastExpr.input();
       std::shared_ptr<const ITypedExpr> vCastInput =
           transformSExpr(sCastInput, sGlobalMapping);
       vCastInputs.emplace_back(vCastInput);
@@ -271,7 +271,7 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
 
 std::shared_ptr<const ITypedExpr>
 SubstraitToVeloxExprConvertor::transformSLiteralExpr(
-    const io::substrait::Expression_Literal& sLiteralExpr) {
+    const substrait::Expression_Literal& sLiteralExpr) {
   variant sLiteralExprVariant =
       s2VTypeConvertor.transformSLiteralType(sLiteralExpr);
   return std::make_shared<ConstantTypedExpr>(sLiteralExprVariant);

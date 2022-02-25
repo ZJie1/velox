@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "plan.pb.h"
+#include "velox/substrait_converter/proto/substrait/plan.pb.h"
 
 namespace facebook::velox {
 

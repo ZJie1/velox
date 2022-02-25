@@ -19,62 +19,62 @@
 
 namespace facebook::velox {
 
-io::substrait::Type VeloxToSubstraitTypeConvertor::veloxTypeToSubstrait(
+substrait::Type VeloxToSubstraitTypeConvertor::veloxTypeToSubstrait(
     const velox::TypePtr& vType,
-    io::substrait::Type* sType) {
+    substrait::Type* sType) {
   switch (vType->kind()) {
     case velox::TypeKind::BOOLEAN: {
-      sType->set_allocated_bool_(new io::substrait::Type_Boolean());
+      sType->set_allocated_bool_(new substrait::Type_Boolean());
       return *sType;
     }
     case velox::TypeKind::TINYINT: {
-      sType->set_allocated_i8(new io::substrait::Type_I8());
+      sType->set_allocated_i8(new substrait::Type_I8());
       return *sType;
     }
     case velox::TypeKind::SMALLINT: {
-      sType->set_allocated_i16(new io::substrait::Type_I16());
+      sType->set_allocated_i16(new substrait::Type_I16());
       return *sType;
     }
     case velox::TypeKind::INTEGER: {
-      sType->set_allocated_i32(new io::substrait::Type_I32());
+      sType->set_allocated_i32(new substrait::Type_I32());
       return *sType;
     }
     case velox::TypeKind::BIGINT: {
-      sType->set_allocated_i64(new io::substrait::Type_I64());
+      sType->set_allocated_i64(new substrait::Type_I64());
       return *sType;
     }
     case velox::TypeKind::REAL: {
-      sType->set_allocated_fp32(new io::substrait::Type_FP32());
+      sType->set_allocated_fp32(new substrait::Type_FP32());
       return *sType;
     }
     case velox::TypeKind::DOUBLE: {
-      sType->set_allocated_fp64(new io::substrait::Type_FP64());
+      sType->set_allocated_fp64(new substrait::Type_FP64());
       return *sType;
     }
     case velox::TypeKind::VARCHAR: {
-      sType->set_allocated_varchar(new io::substrait::Type_VarChar());
+      sType->set_allocated_varchar(new substrait::Type_VarChar());
       return *sType;
     }
     case velox::TypeKind::VARBINARY: {
-      sType->set_allocated_binary(new io::substrait::Type_Binary());
+      sType->set_allocated_binary(new substrait::Type_Binary());
       return *sType;
     }
     case velox::TypeKind::TIMESTAMP: {
-      sType->set_allocated_timestamp(new io::substrait::Type_Timestamp());
+      sType->set_allocated_timestamp(new substrait::Type_Timestamp());
       return *sType;
     }
     case velox::TypeKind::ARRAY: {
-      io::substrait::Type_List* sTList = new io::substrait::Type_List();
+      substrait::Type_List* sTList = new substrait::Type_List();
       const std::shared_ptr<const Type> vArrayType =
           vType->asArray().elementType();
-      io::substrait::Type sListType =
+      substrait::Type sListType =
           veloxTypeToSubstrait(vArrayType, sTList->mutable_type());
 
       sType->set_allocated_list(sTList);
       return *sType;
     }
     case velox::TypeKind::MAP: {
-      io::substrait::Type_Map* sMap = new io::substrait::Type_Map();
+      substrait::Type_Map* sMap = new substrait::Type_Map();
       const std::shared_ptr<const Type> vMapKeyType = vType->asMap().keyType();
       const std::shared_ptr<const Type> vMapValueType =
           vType->asMap().valueType();
@@ -95,10 +95,10 @@ io::substrait::Type VeloxToSubstraitTypeConvertor::veloxTypeToSubstrait(
   }
 }
 
-io::substrait::Type_NamedStruct*
+substrait::NamedStruct*
 VeloxToSubstraitTypeConvertor::vRowTypePtrToSNamedStruct(
     velox::RowTypePtr vRow,
-    io::substrait::Type_NamedStruct* sNamedStruct) {
+    substrait::NamedStruct* sNamedStruct) {
   int64_t vSize = vRow->size();
   std::vector<std::string> vNames = vRow->names();
   std::vector<std::shared_ptr<const Type>> vTypes = vRow->children();
@@ -109,7 +109,7 @@ VeloxToSubstraitTypeConvertor::vRowTypePtrToSNamedStruct(
     std::shared_ptr<const Type> vType = vTypes.at(i);
     sNamedStruct->add_index(sNamedStructSize + i);
     sNamedStruct->add_names(vName);
-    io::substrait::Type* sStruct = sNamedStruct->mutable_struct_()->add_types();
+    substrait::Type* sStruct = sNamedStruct->mutable_struct_()->add_types();
 
     veloxTypeToSubstrait(vType, sStruct);
   }
@@ -117,10 +117,10 @@ VeloxToSubstraitTypeConvertor::vRowTypePtrToSNamedStruct(
   return sNamedStruct;
 }
 
-io::substrait::Expression_Literal*
+substrait::Expression_Literal*
 VeloxToSubstraitTypeConvertor::processVeloxValueByType(
-    io::substrait::Expression_Literal_Struct* sLitValue,
-    io::substrait::Expression_Literal* sField,
+    substrait::Expression_Literal_Struct* sLitValue,
+    substrait::Expression_Literal* sField,
     VectorPtr children) {
   // to handle the null value. TODO need to confirm
   std::optional<vector_size_t> nullCount = children->getNullCount();
@@ -248,12 +248,12 @@ VeloxToSubstraitTypeConvertor::processVeloxValueByType(
   }
 }
 
-io::substrait::Expression_Literal*
+substrait::Expression_Literal*
 VeloxToSubstraitTypeConvertor::processVeloxNullValueByCount(
     std::shared_ptr<const Type> childType,
     std::optional<vector_size_t> nullCount,
-    io::substrait::Expression_Literal_Struct* sLitValue,
-    io::substrait::Expression_Literal* sField) {
+    substrait::Expression_Literal_Struct* sLitValue,
+    substrait::Expression_Literal* sField) {
   for (int64_t i = 0; i < nullCount.value(); i++) {
     sField = sLitValue->add_fields();
     processVeloxNullValue(sField, childType);
@@ -261,58 +261,58 @@ VeloxToSubstraitTypeConvertor::processVeloxNullValueByCount(
   return sField;
 }
 
-io::substrait::Expression_Literal*
+substrait::Expression_Literal*
 VeloxToSubstraitTypeConvertor::processVeloxNullValue(
-    io::substrait::Expression_Literal* sField,
+    substrait::Expression_Literal* sField,
     std::shared_ptr<const Type> childType) {
   switch (childType->kind()) {
     case velox::TypeKind::BOOLEAN: {
-      io::substrait::Type_Boolean* nullValue =
-          new io::substrait::Type_Boolean();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_Boolean* nullValue =
+          new substrait::Type_Boolean();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_bool_(nullValue);
       break;
     }
     case velox::TypeKind::TINYINT: {
-      io::substrait::Type_I8* nullValue = new io::substrait::Type_I8();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_I8* nullValue = new substrait::Type_I8();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_i8(nullValue);
       break;
     }
     case velox::TypeKind::SMALLINT: {
-      io::substrait::Type_I16* nullValue = new io::substrait::Type_I16();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_I16* nullValue = new substrait::Type_I16();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_i16(nullValue);
       break;
     }
     case velox::TypeKind::INTEGER: {
-      io::substrait::Type_I32* nullValue = new io::substrait::Type_I32();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_I32* nullValue = new substrait::Type_I32();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_i32(nullValue);
       break;
     }
     case velox::TypeKind::BIGINT: {
-      io::substrait::Type_I64* nullValue = new io::substrait::Type_I64();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_I64* nullValue = new substrait::Type_I64();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_i64(nullValue);
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      io::substrait::Type_VarChar* nullValue =
-          new io::substrait::Type_VarChar();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_VarChar* nullValue =
+          new substrait::Type_VarChar();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_varchar(nullValue);
       break;
     }
     case velox::TypeKind::REAL: {
-      io::substrait::Type_FP32* nullValue = new io::substrait::Type_FP32();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_FP32* nullValue = new substrait::Type_FP32();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_fp32(nullValue);
       break;
     }
     case velox::TypeKind::DOUBLE: {
-      io::substrait::Type_FP64* nullValue = new io::substrait::Type_FP64();
-      nullValue->set_nullability(io::substrait::Type_Nullability_NULLABLE);
+      substrait::Type_FP64* nullValue = new substrait::Type_FP64();
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
       sField->mutable_null()->set_allocated_fp64(nullValue);
       break;
     }
@@ -328,59 +328,59 @@ VeloxToSubstraitTypeConvertor::processVeloxNullValue(
 // SubstraitToVeloxTypeConvertor
 
 velox::TypePtr SubstraitToVeloxTypeConvertor::substraitTypeToVelox(
-    const io::substrait::Type& sType) {
+    const substrait::Type& sType) {
   switch (sType.kind_case()) {
-    case io::substrait::Type::kFixedBinary:
-    case io::substrait::Type::kBinary: {
+    case substrait::Type::kFixedBinary:
+    case substrait::Type::kBinary: {
       return velox::TypePtr(velox::VARBINARY());
     }
-    case io::substrait::Type::kString:
-    case io::substrait::Type::kFixedChar:
-    case io::substrait::Type::kVarchar: {
+    case substrait::Type::kString:
+    case substrait::Type::kFixedChar:
+    case substrait::Type::kVarchar: {
       return velox::TypePtr(velox::VARCHAR());
     }
-    case io::substrait::Type::kI8: {
+    case substrait::Type::kI8: {
       return velox::TypePtr(velox::TINYINT());
     }
-    case io::substrait::Type::kI16: {
+    case substrait::Type::kI16: {
       return velox::TypePtr(velox::SMALLINT());
     }
-    case io::substrait::Type::kI32: {
+    case substrait::Type::kI32: {
       return velox::TypePtr(velox::INTEGER());
     }
-    case io::substrait::Type::kI64: {
+    case substrait::Type::kI64: {
       return velox::TypePtr(velox::BIGINT());
     }
-    case io::substrait::Type::kBool: {
+    case substrait::Type::kBool: {
       return velox::TypePtr(velox::BOOLEAN());
     }
-    case io::substrait::Type::kFp32: {
+    case substrait::Type::kFp32: {
       return velox::TypePtr(velox::REAL());
     }
-    case io::substrait::Type::kDecimal:
-    case io::substrait::Type::kFp64: {
+    case substrait::Type::kDecimal:
+    case substrait::Type::kFp64: {
       return velox::TypePtr(velox::DOUBLE());
     }
-    case io::substrait::Type::kTimestamp: {
+    case substrait::Type::kTimestamp: {
       return velox::TypePtr(velox::TIMESTAMP());
     }
-    case io::substrait::Type::kMap: {
+    case substrait::Type::kMap: {
       velox::TypePtr keyType = substraitTypeToVelox(sType.map().key());
       velox::TypePtr valueType = substraitTypeToVelox(sType.map().value());
       return velox::TypePtr(velox::MAP(keyType, valueType));
     }
-    case io::substrait::Type::kList: {
+    case substrait::Type::kList: {
       velox::TypePtr listType = substraitTypeToVelox(sType.list().type());
       return velox::TypePtr(velox::ARRAY(listType));
     }
-    case io::substrait::Type::kDate:
-    case io::substrait::Type::kTime:
-    case io::substrait::Type::kIntervalDay:
-    case io::substrait::Type::kIntervalYear:
-    case io::substrait::Type::kTimestampTz:
-    case io::substrait::Type::kStruct:
-    case io::substrait::Type::kUserDefined:
-    case io::substrait::Type::kUuid:
+    case substrait::Type::kDate:
+    case substrait::Type::kTime:
+    case substrait::Type::kIntervalDay:
+    case substrait::Type::kIntervalYear:
+    case substrait::Type::kTimestampTz:
+    case substrait::Type::kStruct:
+    case substrait::Type::kUserDefined:
+    case substrait::Type::kUuid:
     default:
       throw std::runtime_error(
           "Unsupported type " + std::to_string(sType.kind_case()));
@@ -391,44 +391,44 @@ velox::TypePtr SubstraitToVeloxTypeConvertor::substraitTypeToVelox(
 }
 
 variant SubstraitToVeloxTypeConvertor::transformSLiteralType(
-    const io::substrait::Expression_Literal& sLiteralExpr) {
+    const substrait::Expression_Literal& sLiteralExpr) {
   switch (sLiteralExpr.literal_type_case()) {
-    case io::substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
+    case substrait::Expression_Literal::LiteralTypeCase::kDecimal: {
       // Mapping the kDecimal in Substrait to DOUBLE in Velox
       return velox::variant(sLiteralExpr.fp64());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kString: {
+    case substrait::Expression_Literal::LiteralTypeCase::kString: {
       return velox::variant(sLiteralExpr.var_char());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kVarChar: {
+    case substrait::Expression_Literal::LiteralTypeCase::kVarChar: {
       return velox::variant(sLiteralExpr.var_char());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kFixedChar: {
+    case substrait::Expression_Literal::LiteralTypeCase::kFixedChar: {
       return velox::variant(sLiteralExpr.var_char());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
+    case substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
       return velox::variant(sLiteralExpr.boolean());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kI64: {
+    case substrait::Expression_Literal::LiteralTypeCase::kI64: {
       return velox::variant(sLiteralExpr.i64());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kI32: {
+    case substrait::Expression_Literal::LiteralTypeCase::kI32: {
       return velox::variant(sLiteralExpr.i32());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kI16: {
+    case substrait::Expression_Literal::LiteralTypeCase::kI16: {
       return velox::variant(static_cast<int16_t>(sLiteralExpr.i16()));
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kI8: {
+    case substrait::Expression_Literal::LiteralTypeCase::kI8: {
       return velox::variant(static_cast<int8_t>(sLiteralExpr.i8()));
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kFp64: {
+    case substrait::Expression_Literal::LiteralTypeCase::kFp64: {
       return velox::variant(sLiteralExpr.fp64());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kFp32: {
+    case substrait::Expression_Literal::LiteralTypeCase::kFp32: {
       return velox::variant(sLiteralExpr.fp32());
     }
-    case io::substrait::Expression_Literal::LiteralTypeCase::kNull: {
-      io::substrait::Type nullValue = sLiteralExpr.null();
+    case substrait::Expression_Literal::LiteralTypeCase::kNull: {
+      substrait::Type nullValue = sLiteralExpr.null();
       return processSubstraitLiteralNullType(sLiteralExpr, nullValue);
     }
     default:
@@ -439,35 +439,35 @@ variant SubstraitToVeloxTypeConvertor::transformSLiteralType(
 }
 
 variant SubstraitToVeloxTypeConvertor::processSubstraitLiteralNullType(
-    const io::substrait::Expression_Literal& sLiteralExpr,
-    io::substrait::Type nullType) {
+    const substrait::Expression_Literal& sLiteralExpr,
+    substrait::Type nullType) {
   switch (nullType.kind_case()) {
-    case io::substrait::Type::kDecimal: {
+    case substrait::Type::kDecimal: {
       // mapping to DOUBLE
       return velox::variant(sLiteralExpr.fp64());
     }
-    case io::substrait::Type::kString: {
+    case substrait::Type::kString: {
       return velox::variant(sLiteralExpr.var_char());
     }
-    case io::substrait::Type::kBool: {
+    case substrait::Type::kBool: {
       return velox::variant(sLiteralExpr.boolean());
     }
-    case io::substrait::Type::kI64: {
+    case substrait::Type::kI64: {
       return velox::variant(sLiteralExpr.i64());
     }
-    case io::substrait::Type::kI32: {
+    case substrait::Type::kI32: {
       return velox::variant(sLiteralExpr.i32());
     }
-    case io::substrait::Type::kI16: {
+    case substrait::Type::kI16: {
       return velox::variant(static_cast<int16_t>(sLiteralExpr.i16()));
     }
-    case io::substrait::Type::kI8: {
+    case substrait::Type::kI8: {
       return velox::variant(static_cast<int8_t>(sLiteralExpr.i8()));
     }
-    case io::substrait::Type::kFp64: {
+    case substrait::Type::kFp64: {
       return velox::variant(sLiteralExpr.fp64());
     }
-    case io::substrait::Type::kFp32: {
+    case substrait::Type::kFp32: {
       return velox::variant(sLiteralExpr.fp32());
     }
     default:
@@ -478,12 +478,12 @@ variant SubstraitToVeloxTypeConvertor::processSubstraitLiteralNullType(
 }
 
 velox::RowTypePtr SubstraitToVeloxTypeConvertor::sNamedStructToVRowTypePtr(
-    io::substrait::Type_NamedStruct sNamedStruct) {
+    substrait::NamedStruct sNamedStruct) {
   std::vector<std::string> vNames;
   std::vector<velox::TypePtr> vTypes;
   auto sNamedStructSzie = sNamedStruct.index_size();
   for (int64_t i = 0; i < sNamedStructSzie; i++) {
-    const io::substrait::Type& sType = sNamedStruct.struct_().types(i);
+    const substrait::Type& sType = sNamedStruct.struct_().types(i);
     velox::TypePtr vType = substraitTypeToVelox(sType);
     std::string sName = sNamedStruct.names(i);
     vNames.emplace_back(sName);

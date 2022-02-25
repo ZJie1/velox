@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "expression.pb.h"
+#include "velox/substrait_converter/proto/substrait/algebra.pb.h"
 
 #include "core/PlanNode.h"
 
@@ -29,13 +29,13 @@ namespace facebook::velox {
 class VeloxToSubstraitExprConvertor {
  public:
   void transformVExpr(
-      io::substrait::Expression* sExpr,
+      substrait::Expression* sExpr,
       const std::shared_ptr<const ITypedExpr>& vExpr,
-      io::substrait::Type_NamedStruct* sGlobalMapping);
+      substrait::NamedStruct* sGlobalMapping);
 
   void transformVConstantExpr(
       const velox::variant& vConstExpr,
-      io::substrait::Expression_Literal* sLiteralExpr);
+      substrait::Expression_Literal* sLiteralExpr);
 
  private:
   VeloxToSubstraitTypeConvertor v2STypeConvertor;
@@ -45,11 +45,11 @@ class VeloxToSubstraitExprConvertor {
 class SubstraitToVeloxExprConvertor {
  public:
   std::shared_ptr<const ITypedExpr> transformSExpr(
-      const io::substrait::Expression& sExpr,
-      io::substrait::Type_NamedStruct* sGlobalMapping);
+      const substrait::Expression& sExpr,
+      substrait::NamedStruct* sGlobalMapping);
 
   std::shared_ptr<const ITypedExpr> transformSLiteralExpr(
-      const io::substrait::Expression_Literal& sLiteralExpr);
+      const substrait::Expression_Literal& sLiteralExpr);
 
  private:
   SubstraitToVeloxTypeConvertor s2VTypeConvertor;

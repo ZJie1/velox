@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 #pragma once
-
-#include "expression.pb.h"
+#include "velox/substrait_converter/proto/substrait/algebra.pb.h"
+#include "velox/substrait_converter/proto/substrait/type.pb.h"
 
 #include "core/PlanNode.h"
 
@@ -25,44 +25,44 @@ namespace facebook::velox {
 
 class VeloxToSubstraitTypeConvertor {
  public:
-  io::substrait::Type_NamedStruct* vRowTypePtrToSNamedStruct(
+  substrait::NamedStruct* vRowTypePtrToSNamedStruct(
       velox::RowTypePtr vRow,
-      io::substrait::Type_NamedStruct* sNamedStruct);
+      substrait::NamedStruct* sNamedStruct);
 
-  io::substrait::Expression_Literal* processVeloxValueByType(
-      io::substrait::Expression_Literal_Struct* sLitValue,
-      io::substrait::Expression_Literal* sField,
+  substrait::Expression_Literal* processVeloxValueByType(
+      substrait::Expression_Literal_Struct* sLitValue,
+      substrait::Expression_Literal* sField,
       VectorPtr children);
 
-  io::substrait::Type veloxTypeToSubstrait(
+  substrait::Type veloxTypeToSubstrait(
       const velox::TypePtr& vType,
-      io::substrait::Type* sType);
+      substrait::Type* sType);
 
  private:
-  io::substrait::Expression_Literal* processVeloxNullValueByCount(
+  substrait::Expression_Literal* processVeloxNullValueByCount(
       std::shared_ptr<const Type> childType,
       std::optional<vector_size_t> nullCount,
-      io::substrait::Expression_Literal_Struct* sLitValue,
-      io::substrait::Expression_Literal* sField);
+      substrait::Expression_Literal_Struct* sLitValue,
+      substrait::Expression_Literal* sField);
 
-  io::substrait::Expression_Literal* processVeloxNullValue(
-      io::substrait::Expression_Literal* sField,
+  substrait::Expression_Literal* processVeloxNullValue(
+      substrait::Expression_Literal* sField,
       std::shared_ptr<const Type> childType);
 };
 
 class SubstraitToVeloxTypeConvertor {
  public:
   variant transformSLiteralType(
-      const io::substrait::Expression_Literal& sLiteralExpr);
+      const substrait::Expression_Literal& sLiteralExpr);
 
   variant processSubstraitLiteralNullType(
-      const io::substrait::Expression_Literal& sLiteralExpr,
-      io::substrait::Type nullType);
+      const substrait::Expression_Literal& sLiteralExpr,
+      substrait::Type nullType);
 
   velox::RowTypePtr sNamedStructToVRowTypePtr(
-      io::substrait::Type_NamedStruct sNamedStruct);
+      substrait::NamedStruct sNamedStruct);
 
-  velox::TypePtr substraitTypeToVelox(const io::substrait::Type& sType);
+  velox::TypePtr substraitTypeToVelox(const substrait::Type& sType);
 };
 
 } // namespace facebook::velox

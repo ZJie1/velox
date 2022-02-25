@@ -13,23 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <folly/Random.h>
-
-#include "velox/aggregates/tests/AggregationTestBase.h"
 #include "velox/dwio/dwrf/test/utils/BatchMaker.h"
-#include "velox/exec/tests/PlanBuilder.h"
+#include "velox/exec/Aggregate.h"
+#include "velox/exec/tests/utils/OperatorTestBase.h"
+#include "velox/exec/tests/utils/PlanBuilder.h"
+#include "velox/expression/FunctionSignature.h"
 
 #include "velox/exec/SubstraitVeloxPlanConvertor.h"
 
-using namespace facebook::velox::aggregate;
-using namespace facebook::velox::aggregate::test;
+using facebook::velox::exec::Aggregate;
 
 using facebook::velox::test::BatchMaker;
 
 namespace facebook::velox::exec::test {
 namespace {
 
-class SubstraitAggregationTest : public AggregationTestBase {
+class SubstraitAggregationTest : public OperatorTestBase {
  protected:
   void assertQueryInTestSingleKey(
       std::shared_ptr<PlanNode>& vPlan,
@@ -240,7 +239,7 @@ class SubstraitAggregationTest : public AggregationTestBase {
   void SetUp() override {
     v2SPlanConvertor = new VeloxToSubstraitPlanConvertor();
     s2VPlanConvertor = new SubstraitToVeloxPlanConvertor();
-    sPlan = new io::substrait::Plan();
+    sPlan = new substrait::Plan();
   }
 
   void TearDown() override {
@@ -273,7 +272,7 @@ class SubstraitAggregationTest : public AggregationTestBase {
     return vectors;
   };
 
-  io::substrait::Plan* sPlan;
+  substrait::Plan* sPlan;
   VeloxToSubstraitPlanConvertor* v2SPlanConvertor;
   SubstraitToVeloxPlanConvertor* s2VPlanConvertor;
 

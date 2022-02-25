@@ -23,7 +23,7 @@ namespace facebook::velox {
 uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
   GlobalCommonVarSingleton& sGlobSingleton =
       GlobalCommonVarSingleton::getInstance();
-  io::substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
+  substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
   if (function_map_.find(name) == function_map_.end()) {
     auto function_id = last_function_id++;
     auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
@@ -41,7 +41,7 @@ uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
 void SubstraitToVeloxFuncConvertor::initFunctionMap() {
   GlobalCommonVarSingleton& sGlobSingleton =
       GlobalCommonVarSingleton::getInstance();
-  io::substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
+  substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
   std::unordered_map<uint64_t, std::string> funMapSingleton =
       sGlobSingleton.getFunctionsMap();
   for (auto& sMap : sPlanSingleton->mappings()) {

@@ -16,7 +16,8 @@
 
 #pragma once
 
-#include "plan.pb.h"
+#include "velox/substrait_converter/proto/substrait/plan.pb.h"
+#include "velox/substrait_converter/proto/substrait/type.pb.h"
 
 namespace facebook::velox {
 class GlobalCommonVarSingleton {
@@ -26,8 +27,8 @@ class GlobalCommonVarSingleton {
   GlobalCommonVarSingleton& operator=(GlobalCommonVarSingleton const&) = delete;
   ~GlobalCommonVarSingleton(){};
 
-  io::substrait::Plan* getSPlan() const;
-  void setSPlan(io::substrait::Plan* s_plan);
+  substrait::Plan* getSPlan() const;
+  void setSPlan(substrait::Plan* s_plan);
   const std::unordered_map<uint64_t, std::string>& getFunctionsMap() const;
   void setFunctionsMap(
       const std::unordered_map<uint64_t, std::string>& functions_map);
@@ -35,17 +36,17 @@ class GlobalCommonVarSingleton {
  protected:
   // An intermediate variable to help us get the corresponding function mapping
   // relationship when convert from substrait to velox
-  io::substrait::Plan* sPlan_;
+  substrait::Plan* sPlan_;
 
   // parse the function mapping from substrait plan.
   std::unordered_map<uint64_t, std::string> functions_map_;
 
  private:
   GlobalCommonVarSingleton()
-      : sPlan_(new io::substrait::Plan), functions_map_({{0, ""}}){};
+      : sPlan_(new substrait::Plan), functions_map_({{0, ""}}){};
 };
 
 // Substrait is ordinal based field reference implementation. sGlobalMapping
 // is used to tracked the mapping from ID to field reference.
-extern io::substrait::Type_NamedStruct* sGlobalMapping_;
+extern substrait::NamedStruct* sGlobalMapping_;
 } // namespace facebook::velox

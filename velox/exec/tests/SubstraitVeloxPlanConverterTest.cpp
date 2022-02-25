@@ -15,8 +15,8 @@
  */
 
 #include "velox/dwio/dwrf/test/utils/BatchMaker.h"
-#include "velox/exec/tests/OperatorTestBase.h"
-#include "velox/exec/tests/PlanBuilder.h"
+#include "velox/exec/tests/utils/OperatorTestBase.h"
+#include "velox/exec/tests/utils/PlanBuilder.h"
 
 #include "velox/exec/SubstraitVeloxPlanConvertor.h"
 
@@ -183,7 +183,7 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
         << "After transform from substrait, velox plan in assertVeloxSubstraitRoundTripValues is\n"
         << mesage2 << std::endl;
 
-    io::substrait::Plan* sPlan2 = new io::substrait::Plan();
+    substrait::Plan* sPlan2 = new substrait::Plan();
     v2SPlanConvertor->veloxToSubstraitIR(vPlan2, *sPlan2);
     LOG(INFO)
         << "After transform from velox again, substrait plan in assertVeloxSubstraitRoundTripValues is "
@@ -207,7 +207,7 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
   void SetUp() override {
     v2SPlanConvertor = new VeloxToSubstraitPlanConvertor();
     s2VPlanConvertor = new SubstraitToVeloxPlanConvertor();
-    sPlan = new io::substrait::Plan();
+    sPlan = new substrait::Plan();
   }
 
   void TearDown() override {
@@ -218,7 +218,7 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
 
   VeloxToSubstraitPlanConvertor* v2SPlanConvertor;
   SubstraitToVeloxPlanConvertor* s2VPlanConvertor;
-  io::substrait::Plan* sPlan;
+  substrait::Plan* sPlan;
 };
 
 TEST_F(SubstraitVeloxPlanConverterTest, veloxSubstraitRoundTripValuesNode) {

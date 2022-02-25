@@ -59,16 +59,15 @@ add_library(
   Unnest.cpp
   Values.cpp
   VectorHasher.cpp
-<<<<<<< HEAD
-  AssignUniqueId.cpp)
-=======
+  AssignUniqueId.cpp
   SubstraitIRConverter.cpp
   SubstraitVeloxTypeConvertor.cpp
   GlobalCommonVariable.cpp
-  SubstraitVeloxFuncConvertor.cpp)
+  SubstraitVeloxFuncConvertor.cpp
+  SubstraitVeloxExprConvertor.cpp
+  SubstraitVeloxPlanConvertor.cpp)
 
 find_library(cider cider)
->>>>>>> 3a5d7b06db3e0f91d9df39b92476d56b0ea29d63
 
 target_link_libraries(
   velox_exec
