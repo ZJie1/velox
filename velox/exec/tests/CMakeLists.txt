@@ -46,7 +46,6 @@ add_executable(
   FunctionSignatureBuilderTest.cpp
   UnnestTest.cpp
   AssignUniqueIdTest.cpp
-  SubstraitIRConverterTest.cpp
   SubstraitAggregationTest.cpp
   SubstraitVeloxPlanConverterTest.cpp)
 
