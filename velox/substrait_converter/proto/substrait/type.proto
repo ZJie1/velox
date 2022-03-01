@@ -151,7 +151,7 @@ message Type {
   message Struct {
     repeated Type types = 1;
     uint32 type_variation_reference = 2;
-    Nullability nullability = 3;
+    repeated Nullability nullability = 3;
   }
 
   message List {
@@ -191,4 +191,5 @@ message NamedStruct {
   // list of names in dfs order
   repeated string names = 1;
   Type.Struct struct = 2;
+  repeated int32 index = 3;
 }

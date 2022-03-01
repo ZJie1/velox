@@ -28,7 +28,6 @@ add_library(
   HashPartitionFunction.cpp
   HashProbe.cpp
   HashTable.cpp
-  HybridExecOperator.cpp
   JoinBridge.cpp
   Limit.cpp
   LocalPartition.cpp
@@ -57,7 +56,6 @@ add_library(
   SubstraitVeloxExprConvertor.cpp
   SubstraitVeloxPlanConvertor.cpp)
 
-find_library(cider cider)
 
 target_link_libraries(
   velox_exec
@@ -69,7 +67,7 @@ target_link_libraries(
   velox_common_base
   velox_dwio_dwrf_proto
   velox_hive_partition_function
-  cider)
+  velox_substrait_plan_converter)
 
 if(${VELOX_BUILD_TESTING})
   add_subdirectory(tests)

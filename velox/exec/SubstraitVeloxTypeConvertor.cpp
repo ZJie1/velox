@@ -237,7 +237,11 @@ VeloxToSubstraitTypeConvertor::processVeloxValueByType(
       } else {
         for (int64_t i = 0; i < flatVecSzie; i++) {
           sField = sLitValue->add_fields();
-          sField->set_var_char(childToFlatVec->valueAt(i));
+          substrait::Expression_Literal::VarChar* sVarChar = new substrait::Expression_Literal::VarChar();
+          StringView vChildValueAt = childToFlatVec->valueAt(i);
+          sVarChar->set_value(vChildValueAt);
+          sVarChar->set_length(vChildValueAt.size());
+          sField->set_allocated_var_char(sVarChar);
         }
       }
       return sField;
@@ -269,50 +273,50 @@ VeloxToSubstraitTypeConvertor::processVeloxNullValue(
     case velox::TypeKind::BOOLEAN: {
       substrait::Type_Boolean* nullValue =
           new substrait::Type_Boolean();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_bool_(nullValue);
       break;
     }
     case velox::TypeKind::TINYINT: {
       substrait::Type_I8* nullValue = new substrait::Type_I8();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i8(nullValue);
       break;
     }
     case velox::TypeKind::SMALLINT: {
       substrait::Type_I16* nullValue = new substrait::Type_I16();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i16(nullValue);
       break;
     }
     case velox::TypeKind::INTEGER: {
       substrait::Type_I32* nullValue = new substrait::Type_I32();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i32(nullValue);
       break;
     }
     case velox::TypeKind::BIGINT: {
       substrait::Type_I64* nullValue = new substrait::Type_I64();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i64(nullValue);
       break;
     }
     case velox::TypeKind::VARCHAR: {
       substrait::Type_VarChar* nullValue =
           new substrait::Type_VarChar();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_varchar(nullValue);
       break;
     }
     case velox::TypeKind::REAL: {
       substrait::Type_FP32* nullValue = new substrait::Type_FP32();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_fp32(nullValue);
       break;
     }
     case velox::TypeKind::DOUBLE: {
       substrait::Type_FP64* nullValue = new substrait::Type_FP64();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABLE);
+      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_fp64(nullValue);
       break;
     }
@@ -379,7 +383,6 @@ velox::TypePtr SubstraitToVeloxTypeConvertor::substraitTypeToVelox(
     case substrait::Type::kIntervalYear:
     case substrait::Type::kTimestampTz:
     case substrait::Type::kStruct:
-    case substrait::Type::kUserDefined:
     case substrait::Type::kUuid:
     default:
       throw std::runtime_error(
@@ -398,13 +401,13 @@ variant SubstraitToVeloxTypeConvertor::transformSLiteralType(
       return velox::variant(sLiteralExpr.fp64());
     }
     case substrait::Expression_Literal::LiteralTypeCase::kString: {
-      return velox::variant(sLiteralExpr.var_char());
+      return velox::variant(sLiteralExpr.string());
     }
     case substrait::Expression_Literal::LiteralTypeCase::kVarChar: {
-      return velox::variant(sLiteralExpr.var_char());
+      return velox::variant(sLiteralExpr.var_char().value());
     }
     case substrait::Expression_Literal::LiteralTypeCase::kFixedChar: {
-      return velox::variant(sLiteralExpr.var_char());
+      return velox::variant(sLiteralExpr.fixed_char());
     }
     case substrait::Expression_Literal::LiteralTypeCase::kBoolean: {
       return velox::variant(sLiteralExpr.boolean());
@@ -447,7 +450,7 @@ variant SubstraitToVeloxTypeConvertor::processSubstraitLiteralNullType(
       return velox::variant(sLiteralExpr.fp64());
     }
     case substrait::Type::kString: {
-      return velox::variant(sLiteralExpr.var_char());
+      return velox::variant(sLiteralExpr.string());
     }
     case substrait::Type::kBool: {
       return velox::variant(sLiteralExpr.boolean());

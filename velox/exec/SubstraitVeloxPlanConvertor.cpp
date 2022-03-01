@@ -24,7 +24,7 @@ void VeloxToSubstraitPlanConvertor::veloxToSubstraitIR(
     std::shared_ptr<const PlanNode> vPlan,
     substrait::Plan& sPlan) {
   // Assume only accepts a single plan fragment
-  substrait::Rel* sRel = sPlan.add_relations();
+  substrait::Rel* sRel = sPlan.add_relations()->mutable_rel();
   veloxToSubstraitIR(vPlan, sRel);
 }
 
@@ -229,7 +229,7 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
   for (int64_t i = 0; i < vAggregatesSize; i++) {
     substrait::AggregateRel_Measure* sAggMeasures = sAggRel->add_measures();
     std::shared_ptr<const CallTypedExpr> vAggregatesExpr = vAggregates.at(i);
-    substrait::Expression_AggregateFunction* sAggFunction =
+    substrait::AggregateFunction* sAggFunction =
         sAggMeasures->mutable_measure();
 
     substrait::Expression* sAggFunctionExpr = sAggFunction->add_args();
@@ -238,7 +238,7 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
 
     std::string vFunName = vAggregatesExpr->name();
     int64_t sFunId = v2SFuncConvertor.registerSFunction(vFunName);
-    sAggFunction->mutable_id()->set_id(sFunId);
+    sAggFunction->set_function_reference(sFunId);
 
     std::shared_ptr<const Type> vFunOutputType = vAggregatesExpr->type();
     substrait::Type* sAggFunOutputType =
@@ -248,26 +248,21 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
     switch (vStep) {
       case core::AggregationNode::Step::kPartial: {
         sAggFunction->set_phase(
-            substrait::
-                Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE);
+            substrait::AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE);
         break;
       }
       case core::AggregationNode::Step::kIntermediate: {
         sAggFunction->set_phase(
-            substrait::
-                Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE);
+            substrait::AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE);
         break;
       }
       case core::AggregationNode::Step::kSingle: {
-        sAggFunction->set_phase(
-            substrait::
-                Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_RESULT);
+        sAggFunction->set_phase(substrait::AGGREGATION_PHASE_INITIAL_TO_RESULT);
         break;
       }
       case core::AggregationNode::Step::kFinal: {
         sAggFunction->set_phase(
-            substrait::
-                Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
+            substrait::AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT);
         break;
       }
       default:
@@ -415,7 +410,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
     auto func_id = v2SFuncConvertor.registerSFunction("HashPartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
-    scala_function->mutable_id()->set_id(func_id);
+    scala_function->set_function_reference(func_id);
     // TODO: add parameters
     //  //velox std::vector<std::shared_ptr<const core::FieldAccessTypedExpr>>
     //  to substrait selection FieldReference
@@ -434,7 +429,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
         v2SFuncConvertor.registerSFunction("RoundRobinPartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
-    scala_function->mutable_id()->set_id(func_id);
+    scala_function->set_function_reference(func_id);
     // TODO add keys
 
   } else if (
@@ -443,7 +438,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
     auto func_id = v2SFuncConvertor.registerSFunction("HivePartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
-    scala_function->mutable_id()->set_id(func_id);
+    scala_function->set_function_reference(func_id);
     // TODO add keys
   }
 }
@@ -453,7 +448,7 @@ std::shared_ptr<const PlanNode>
 SubstraitToVeloxPlanConvertor::substraitIRToVelox(
     const substrait::Plan& sPlan) {
   s2VFuncConvertor.initFunctionMap();
-  const substrait::Rel& sRel = sPlan.relations(0);
+  const substrait::Rel& sRel = sPlan.relations(0).rel();
   return substraitIRToVelox(sRel, 0);
 }
 
@@ -461,7 +456,7 @@ std::shared_ptr<const PlanNode>
 SubstraitToVeloxPlanConvertor::substraitIRToVelox(
     const substrait::Rel& sRel,
     int depth) {
-  switch (sRel.RelType_case()) {
+  switch (sRel.rel_type_case()) {
     case substrait::Rel::RelTypeCase::kFilter:
       return transformSFilter(sRel, depth);
     case substrait::Rel::RelTypeCase::kSort:
@@ -481,7 +476,7 @@ SubstraitToVeloxPlanConvertor::substraitIRToVelox(
     case substrait::Rel::RelTypeCase::kDistribute:
     default:
       throw std::runtime_error(
-          "Unsupported relation type " + std::to_string(sRel.RelType_case()));
+          "Unsupported relation type " + std::to_string(sRel.rel_type_case()));
   }
 }
 
@@ -530,10 +525,12 @@ std::shared_ptr<PlanNode> SubstraitToVeloxPlanConvertor::transformSRead(
         std::shared_ptr<velox::connector::ColumnHandle>>
         assignments;
     for (auto& name : vOutputType->names()) {
+
       std::shared_ptr<velox::connector::ColumnHandle> colHandle =
           std::make_shared<velox::connector::hive::HiveColumnHandle>(
               name,
-              velox::connector::hive::HiveColumnHandle::ColumnType::kRegular);
+              velox::connector::hive::HiveColumnHandle::ColumnType::kRegular,
+              vOutputType);
       assignments.insert({name, colHandle});
     }
 
@@ -620,6 +617,8 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
   std::vector<std::shared_ptr<const FieldAccessTypedExpr>> groupingKeys;
   std::shared_ptr<const FieldAccessTypedExpr> groupingKey;
 
+  std::vector<std::shared_ptr<const FieldAccessTypedExpr>> preGroupedKeys;
+
   const substrait::AggregateRel& sAgg = sRel.aggregate();
   std::shared_ptr<const PlanNode> vSource =
       substraitIRToVelox(sAgg.input(), depth + 1);
@@ -637,7 +636,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
   }
   // for velox  sum(c) is ok, but sum(c + d) is not.
   for (auto& sMeas : sAgg.measures()) {
-    substrait::Expression_AggregateFunction sMeasure = sMeas.measure();
+    substrait::AggregateFunction sMeasure = sMeas.measure();
     if (sMeas.has_filter()) {
       substrait::Expression sAggMask = sMeas.filter();
       // handle the case sum(IF(linenumber = 7, partkey)) <=>sum(partkey) FILTER
@@ -658,7 +657,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
     std::vector<std::shared_ptr<const ITypedExpr>> children;
     std::string out_name;
     std::string function_name =
-        s2VFuncConvertor.FindFunction(sMeasure.id().id());
+        s2VFuncConvertor.FindFunction(sMeasure.function_reference());
     out_name = function_name;
     // AggregateFunction.args should be one for velox . if not, should do
     // project firstly
@@ -680,23 +679,22 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
     }
 
     switch (sMeas.measure().phase()) {
-      case substrait::Expression_AggregationPhase::
-          Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE: {
+      case substrait::AggregationPhase::
+          AGGREGATION_PHASE_INITIAL_TO_INTERMEDIATE: {
         step = AggregationNode::Step::kPartial;
         break;
       }
-      case substrait::Expression_AggregationPhase::
-          Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT: {
+      case substrait::AggregationPhase::
+          AGGREGATION_PHASE_INTERMEDIATE_TO_RESULT: {
         step = AggregationNode::Step::kFinal;
         break;
       }
-      case substrait::Expression_AggregationPhase::
-          Expression_AggregationPhase_AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE: {
+      case substrait::AggregationPhase::
+          AGGREGATION_PHASE_INTERMEDIATE_TO_INTERMEDIATE: {
         step = AggregationNode::Step::kIntermediate;
         break;
       }
-      case substrait::Expression_AggregationPhase::
-          Expression_AggregationPhase_AGGREGATION_PHASE_INITIAL_TO_RESULT: {
+      case substrait::AggregationPhase::AGGREGATION_PHASE_INITIAL_TO_RESULT: {
         step = AggregationNode::Step::kSingle;
         break;
       }
@@ -709,6 +707,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
       std::to_string(depth),
       step,
       groupingKeys,
+      preGroupedKeys,
       aggregateNames,
       aggregates,
       aggregateMasks,
@@ -765,7 +764,7 @@ std::shared_ptr<OrderByNode> SubstraitToVeloxPlanConvertor::transformSSort(
 
   // The supported orders are: ascending nulls first, ascending nulls last,
   // descending nulls first, descending nulls last
-  for (const substrait::Expression_SortField& sOrderField : sSort.sorts()) {
+  for (const substrait::SortField& sOrderField : sSort.sorts()) {
     // TODO check whether  ssort.common() need to be the node output before
     const substrait::Expression sExpr = sOrderField.expr();
     std::shared_ptr<const ITypedExpr> sortingKey =
@@ -774,22 +773,22 @@ std::shared_ptr<OrderByNode> SubstraitToVeloxPlanConvertor::transformSSort(
         std::dynamic_pointer_cast<const FieldAccessTypedExpr>(sortingKey);
     sortingKeys.push_back(constSortKey);
 
-    switch (sOrderField.formal()) {
-      case substrait::Expression_SortField_SortType::
-          Expression_SortField_SortType_ASC_NULLS_FIRST:
+    switch (sOrderField.direction()) {
+      case substrait::SortField_SortDirection::
+          SortField_SortDirection_SORT_DIRECTION_ASC_NULLS_FIRST:
         sortingOrders.push_back(SortOrder(true, true));
-      case substrait::Expression_SortField_SortType::
-          Expression_SortField_SortType_ASC_NULLS_LAST:
+      case substrait::SortField_SortDirection::
+          SortField_SortDirection_SORT_DIRECTION_ASC_NULLS_LAST:
         sortingOrders.push_back(SortOrder(true, false));
-      case substrait::Expression_SortField_SortType::
-          Expression_SortField_SortType_DESC_NULLS_FIRST:
+      case substrait::SortField_SortDirection::
+          SortField_SortDirection_SORT_DIRECTION_DESC_NULLS_FIRST:
         sortingOrders.push_back(SortOrder(false, true));
-      case substrait::Expression_SortField_SortType::
-          Expression_SortField_SortType_DESC_NULLS_LAST:
+      case substrait::SortField_SortDirection::
+          SortField_SortDirection_SORT_DIRECTION_DESC_NULLS_LAST:
         sortingOrders.push_back(SortOrder(false, false));
       default:
         throw std::runtime_error(
-            "Unsupported ordering " + std::to_string(sOrderField.formal()));
+            "Unsupported ordering " + std::to_string(sOrderField.direction()));
     }
   }
   const std::vector<std::shared_ptr<const FieldAccessTypedExpr>>&

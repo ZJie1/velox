@@ -65,7 +65,6 @@ if(${VELOX_CODEGEN_SUPPORT})
   add_subdirectory(experimental/codegen)
 endif()
 
-add_subdirectory(cider)
 # substrait converter
 if(${VELOX_ENABLE_SUBSTRAIT})
   add_subdirectory(substrait_converter)

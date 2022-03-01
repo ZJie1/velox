@@ -59,7 +59,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
       // the substrait communcity have changed many in this part...
       int64_t sFunId = v2SFuncConvertor.registerSFunction(vCallTypeExprFunName);
       LOG(INFO) << "sFunId is " << sFunId << std::endl;
-      sFun->mutable_id()->set_id(sFunId);
+      sFun->set_function_reference(sFunId);
 
       for (auto& vArg : vCallTypeInputs) {
         substrait::Expression* sArg = sFun->add_args();
@@ -77,7 +77,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
     const std::shared_ptr<const Type> vExprType = vFieldExpr->type();
     std::string vExprName = vFieldExpr->name();
 
-    substrait::ReferenceSegment_StructField* sDirectStruct =
+    substrait::Expression_ReferenceSegment_StructField* sDirectStruct =
         sExpr->mutable_selection()
             ->mutable_direct_reference()
             ->mutable_struct_field();
@@ -125,9 +125,11 @@ void VeloxToSubstraitExprConvertor::transformVConstantExpr(
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      std::basic_string<char> vCharValue = vConstExpr.value<StringView>();
-      sLiteralExpr->set_allocated_var_char(
-          reinterpret_cast<std::string*>(vCharValue.data()));
+      auto vCharValue = vConstExpr.value<StringView>();
+      substrait::Expression_Literal::VarChar* sVarChar = new substrait::Expression_Literal::VarChar();
+      sVarChar->set_value(vCharValue.data());
+      sVarChar->set_length(vCharValue.size());
+      sLiteralExpr->set_allocated_var_char(sVarChar);
       break;
     }
     case velox::TypeKind::BIGINT: {
@@ -209,7 +211,7 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
       }
       // TODO search function name by yaml extension
       std::string function_name =
-          s2VFuncConvertor.FindFunction(sExpr.scalar_function().id().id());
+          s2VFuncConvertor.FindFunction(sExpr.scalar_function().function_reference());
       //  and or  try concatrow
       if (function_name != "if" && function_name != "switch") {
         return std::make_shared<CallTypedExpr>(

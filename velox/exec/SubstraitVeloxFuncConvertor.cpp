@@ -26,11 +26,15 @@ uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
   substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
   if (function_map_.find(name) == function_map_.end()) {
     auto function_id = last_function_id++;
-    auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
+    auto sFun = sPlanSingleton->add_extensions()->mutable_extension_function();
+    sFun->set_function_anchor(function_id);
+    sFun->set_name(name);
+    sFun->set_extension_uri_reference(44);
+/*   auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
     sFun->mutable_extension_id()->set_id(42);
     sFun->mutable_function_id()->set_id(function_id);
     sFun->set_index(function_id);
-    sFun->set_name(name);
+    sFun->set_name(name);*/
 
     function_map_[name] = function_id;
   }
@@ -44,12 +48,12 @@ void SubstraitToVeloxFuncConvertor::initFunctionMap() {
   substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
   std::unordered_map<uint64_t, std::string> funMapSingleton =
       sGlobSingleton.getFunctionsMap();
-  for (auto& sMap : sPlanSingleton->mappings()) {
-    if (!sMap.has_function_mapping()) {
+  for (auto& sMap : sPlanSingleton->extensions()) {
+    if (!sMap.has_extension_function()) {
       continue;
     }
-    auto& sFunMap = sMap.function_mapping();
-    funMapSingleton[sFunMap.function_id().id()] = sFunMap.name();
+    auto& sFunMap = sMap.extension_function();
+    funMapSingleton[sFunMap.function_anchor()] = sFunMap.name();
   }
   sGlobSingleton.setFunctionsMap(funMapSingleton);
 }

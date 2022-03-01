@@ -18,8 +18,8 @@
 #include <string>
 #include <typeinfo>
 
-#include "velox/substrait_converter/proto/substrait/algebra.pb.h"
-#include "velox/substrait_converter/proto/substrait/plan.pb.h"
+#include "substrait/algebra.pb.h"
+#include "substrait/plan.pb.h"
 
 #include "connectors/hive/HiveConnector.h"
 #include "connectors/hive/HivePartitionFunction.h"

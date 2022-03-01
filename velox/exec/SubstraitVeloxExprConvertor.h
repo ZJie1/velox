@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include "velox/substrait_converter/proto/substrait/algebra.pb.h"
+#include "substrait/algebra.pb.h"
 
 #include "core/PlanNode.h"
 
