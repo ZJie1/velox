@@ -17,7 +17,7 @@
 
 #include "substrait/plan.pb.h"
 
-namespace facebook::velox::substraitconvertor  {
+namespace facebook::velox::substraitconvertor {
 
 class VeloxToSubstraitFuncConvertor {
  public:
@@ -37,4 +37,3 @@ class SubstraitToVeloxFuncConvertor {
 };
 
 } // namespace facebook::velox::substraitconvertor
-

@@ -24,7 +24,7 @@
 
 using namespace facebook::velox::core;
 
-namespace facebook::velox::substraitconvertor  {
+namespace facebook::velox::substraitconvertor {
 
 class VeloxToSubstraitExprConvertor {
  public:
@@ -57,5 +57,3 @@ class SubstraitToVeloxExprConvertor {
 };
 
 } // namespace facebook::velox::substraitconvertor
-
-

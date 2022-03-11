@@ -30,11 +30,11 @@ uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
     sFun->set_function_anchor(function_id);
     sFun->set_name(name);
     sFun->set_extension_uri_reference(44);
-/*   auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
-    sFun->mutable_extension_id()->set_id(42);
-    sFun->mutable_function_id()->set_id(function_id);
-    sFun->set_index(function_id);
-    sFun->set_name(name);*/
+    /*   auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
+        sFun->mutable_extension_id()->set_id(42);
+        sFun->mutable_function_id()->set_id(function_id);
+        sFun->set_index(function_id);
+        sFun->set_name(name);*/
 
     function_map_[name] = function_id;
   }

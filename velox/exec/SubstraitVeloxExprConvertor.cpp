@@ -20,7 +20,7 @@
 
 #include "GlobalCommonVariable.h"
 
-namespace facebook::velox::substraitconvertor  {
+namespace facebook::velox::substraitconvertor {
 
 void VeloxToSubstraitExprConvertor::transformVExpr(
     substrait::Expression* sExpr,

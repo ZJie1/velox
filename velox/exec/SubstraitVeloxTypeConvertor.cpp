@@ -17,7 +17,7 @@
 
 #include "expression/Expr.h"
 
-namespace facebook::velox::substraitconvertor  {
+namespace facebook::velox::substraitconvertor {
 
 substrait::Type VeloxToSubstraitTypeConvertor::veloxTypeToSubstrait(
     const velox::TypePtr& vType,
@@ -235,7 +235,8 @@ VeloxToSubstraitTypeConvertor::processVeloxValueByType(
       } else {
         for (int64_t i = 0; i < flatVecSzie; i++) {
           sField = sLitValue->add_fields();
-          substrait::Expression_Literal::VarChar* sVarChar = new substrait::Expression_Literal::VarChar();
+          substrait::Expression_Literal::VarChar* sVarChar =
+              new substrait::Expression_Literal::VarChar();
           StringView vChildValueAt = childToFlatVec->valueAt(i);
           sVarChar->set_value(vChildValueAt);
           sVarChar->set_length(vChildValueAt.size());
@@ -269,52 +270,58 @@ VeloxToSubstraitTypeConvertor::processVeloxNullValue(
     std::shared_ptr<const Type> childType) {
   switch (childType->kind()) {
     case velox::TypeKind::BOOLEAN: {
-      substrait::Type_Boolean* nullValue =
-          new substrait::Type_Boolean();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      substrait::Type_Boolean* nullValue = new substrait::Type_Boolean();
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_bool_(nullValue);
       break;
     }
     case velox::TypeKind::TINYINT: {
       substrait::Type_I8* nullValue = new substrait::Type_I8();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i8(nullValue);
       break;
     }
     case velox::TypeKind::SMALLINT: {
       substrait::Type_I16* nullValue = new substrait::Type_I16();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i16(nullValue);
       break;
     }
     case velox::TypeKind::INTEGER: {
       substrait::Type_I32* nullValue = new substrait::Type_I32();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i32(nullValue);
       break;
     }
     case velox::TypeKind::BIGINT: {
       substrait::Type_I64* nullValue = new substrait::Type_I64();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_i64(nullValue);
       break;
     }
     case velox::TypeKind::VARCHAR: {
-      substrait::Type_VarChar* nullValue =
-          new substrait::Type_VarChar();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      substrait::Type_VarChar* nullValue = new substrait::Type_VarChar();
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_varchar(nullValue);
       break;
     }
     case velox::TypeKind::REAL: {
       substrait::Type_FP32* nullValue = new substrait::Type_FP32();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_fp32(nullValue);
       break;
     }
     case velox::TypeKind::DOUBLE: {
       substrait::Type_FP64* nullValue = new substrait::Type_FP64();
-      nullValue->set_nullability(substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      nullValue->set_nullability(
+          substrait::Type_Nullability_NULLABILITY_NULLABLE);
       sField->mutable_null()->set_allocated_fp64(nullValue);
       break;
     }
