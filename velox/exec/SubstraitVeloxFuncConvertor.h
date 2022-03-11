@@ -17,7 +17,7 @@
 
 #include "substrait/plan.pb.h"
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor  {
 
 class VeloxToSubstraitFuncConvertor {
  public:
@@ -36,4 +36,5 @@ class SubstraitToVeloxFuncConvertor {
   std::string FindFunction(uint64_t id);
 };
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor
+

@@ -18,7 +18,7 @@
 
 #include "GlobalCommonVariable.h"
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor {
 
 uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
   GlobalCommonVarSingleton& sGlobSingleton =
@@ -70,4 +70,4 @@ std::string SubstraitToVeloxFuncConvertor::FindFunction(uint64_t id) {
   return funMapSingleton[id];
 }
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor

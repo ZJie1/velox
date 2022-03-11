@@ -22,7 +22,7 @@ message RelCommon {
   Distribution distribution = 5;
 
   message Direct {}
-  message Emit { repeated NamedStruct output_mapping = 1; }
+  message Emit { repeated int32 output_mapping = 1; }
 
   // Changes to the operation that can influence efficiency/performance but
   // should not impact correctness.

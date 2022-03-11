@@ -33,7 +33,7 @@
 
 using namespace facebook::velox::core;
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor {
 
 class VeloxToSubstraitPlanConvertor {
  public:
@@ -47,8 +47,7 @@ class VeloxToSubstraitPlanConvertor {
       substrait::Rel* sRel);
   void transformVFilter(
       std::shared_ptr<const FilterNode> vFilterNode,
-      substrait::FilterRel* sFilterRel,
-      substrait::NamedStruct* sGlobalMapping);
+      substrait::FilterRel* sFilterRel);
 
   void transformVValuesNode(
       std::shared_ptr<const ValuesNode> vValuesNode,
@@ -56,8 +55,7 @@ class VeloxToSubstraitPlanConvertor {
 
   void transformVProjNode(
       std::shared_ptr<const ProjectNode> vProjNode,
-      substrait::ProjectRel* sProjRel,
-      substrait::NamedStruct* sGlobalMapping);
+      substrait::ProjectRel* sProjRel);
 
   void transformVPartitionedOutputNode(
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode,
@@ -69,16 +67,15 @@ class VeloxToSubstraitPlanConvertor {
 
   void transformVAggregateNode(
       std::shared_ptr<const AggregationNode> vAggNode,
-      substrait::AggregateRel* sAggRel,
-      substrait::NamedStruct* sGlobalMapping);
+      substrait::AggregateRel* sAggRel);
 
   void transformVOrderBy(
       std::shared_ptr<const OrderByNode> vOrderbyNode,
       substrait::SortRel* sSortRel);
 
-  VeloxToSubstraitExprConvertor v2SExprConvertor;
-  VeloxToSubstraitTypeConvertor v2STypeConvertor;
-  VeloxToSubstraitFuncConvertor v2SFuncConvertor;
+  VeloxToSubstraitExprConvertor v2SExprConvertor_;
+  VeloxToSubstraitTypeConvertor v2STypeConvertor_;
+  VeloxToSubstraitFuncConvertor v2SFuncConvertor_;
 };
 
 class SubstraitToVeloxPlanConvertor {
@@ -115,14 +112,13 @@ class SubstraitToVeloxPlanConvertor {
       const substrait::Rel& sRel,
       int depth);
 
-  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool =
+  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool_ =
       velox::memory::getDefaultScopedMemoryPool();
   velox::memory::MemoryPool* pool_;
 
-  SubstraitToVeloxFuncConvertor s2VFuncConvertor;
-  SubstraitToVeloxExprConvertor s2VExprConvertor;
-  SubstraitToVeloxTypeConvertor s2VTypeConvertor;
+  SubstraitToVeloxFuncConvertor s2VFuncConvertor_;
+  SubstraitToVeloxExprConvertor s2VExprConvertor_;
+  SubstraitToVeloxTypeConvertor s2VTypeConvertor_;
 };
 
-} // namespace facebook::velox
-
+} // namespace facebook::velox::substraitconvertor

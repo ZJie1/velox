@@ -17,7 +17,7 @@
 
 #include "expression/Expr.h"
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor  {
 
 substrait::Type VeloxToSubstraitTypeConvertor::veloxTypeToSubstrait(
     const velox::TypePtr& vType,
@@ -102,12 +102,10 @@ VeloxToSubstraitTypeConvertor::vRowTypePtrToSNamedStruct(
   int64_t vSize = vRow->size();
   std::vector<std::string> vNames = vRow->names();
   std::vector<std::shared_ptr<const Type>> vTypes = vRow->children();
-  int64_t sNamedStructSize = sNamedStruct->index_size();
 
   for (int64_t i = 0; i < vSize; ++i) {
     std::string vName = vNames.at(i);
     std::shared_ptr<const Type> vType = vTypes.at(i);
-    sNamedStruct->add_index(sNamedStructSize + i);
     sNamedStruct->add_names(vName);
     substrait::Type* sStruct = sNamedStruct->mutable_struct_()->add_types();
 
@@ -484,8 +482,8 @@ velox::RowTypePtr SubstraitToVeloxTypeConvertor::sNamedStructToVRowTypePtr(
     substrait::NamedStruct sNamedStruct) {
   std::vector<std::string> vNames;
   std::vector<velox::TypePtr> vTypes;
-  auto sNamedStructSzie = sNamedStruct.index_size();
-  for (int64_t i = 0; i < sNamedStructSzie; i++) {
+  auto sNamedStructSize = sNamedStruct.names_size();
+  for (int64_t i = 0; i < sNamedStructSize; i++) {
     const substrait::Type& sType = sNamedStruct.struct_().types(i);
     velox::TypePtr vType = substraitTypeToVelox(sType);
     std::string sName = sNamedStruct.names(i);
@@ -498,4 +496,4 @@ velox::RowTypePtr SubstraitToVeloxTypeConvertor::sNamedStructToVRowTypePtr(
   return vRowTypeRes;
 }
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor

@@ -23,6 +23,7 @@
 using namespace facebook::velox;
 using namespace facebook::velox::exec;
 using namespace facebook::velox::exec::test;
+using namespace facebook::velox::substraitconvertor;
 
 using facebook::velox::test::BatchMaker;
 
@@ -136,17 +137,17 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
     LOG(INFO)
         << "After transform from substrait, velox plan in assertVeloxSubstraitRoundTripProject is :\n"
         << mesage2 << std::endl;
-
+    std::cout<<mesage2<<std::endl;
     assertQuery(vPlan2, "SELECT c0, c1, c0 + c1 FROM tmp");
   }
 
   void assertVeloxToSubstraitProject(std::vector<RowVectorPtr>&& vectors) {
     auto vPlan = PlanBuilder()
                      .values(vectors)
-                     .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
+                     .project(std::vector<std::string>{ "c0 + c1", "c1-c2"})
                      .planNode();
 
-    assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp");
+    assertQuery(vPlan, "SELECT  c0 + c1, c1-c2 FROM tmp");
 
     auto message = vPlan->toString(true, true);
     LOG(INFO)
@@ -160,6 +161,76 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
     sPlan->PrintDebugString();
   }
 
+  void assertFilterProjectFused(std::vector<RowVectorPtr> &&vectors) {
+    auto vPlan = PlanBuilder()
+                     .values(vectors)
+                     .project(
+                         std::vector<std::string>{"c0", "c1", "c0 % 100 + c1 % 50 AS e1"})
+                     .filter("e1 > 13")
+                     .planNode();
+
+    assertQuery(vPlan, "SELECT c0, c1 FROM tmp where c0 % 100 + c1 % 50 >13");
+
+    auto message = vPlan->toString(true, true);
+    LOG(INFO)
+        << "Before transform, velox plan in assertFilterProjectFused is: \n"
+        << message << std::endl;
+    std::cout << "vPlan before substrait trans is====================\n" << message << std::endl;
+    v2SPlanConvertor->veloxToSubstraitIR(vPlan, *sPlan);
+
+    LOG(INFO)
+        << "After transform from velox, substrait plan in assertFilterProjectFused is :"
+        << std::endl;
+    sPlan->PrintDebugString();
+
+    // convert back
+    auto vPlan2 = s2VPlanConvertor->substraitIRToVelox(*sPlan);
+
+    auto mesage2 = vPlan2->toString(true, true);
+    LOG(INFO)
+        << "After transform from substrait, velox plan in assertFilterProjectFused is\n"
+        << mesage2 << std::endl;
+
+    assertQuery(vPlan2, "SELECT c0, c1 FROM tmp where c0 % 100 + c1 % 50 >13");
+    vPlan2->toString(true, true);
+  }
+
+   void assertVeloxSubstraitRoundTripFilterProject(std::vector<RowVectorPtr> &&vectors){
+     auto vPlan = PlanBuilder()
+                      .values(vectors)
+                      .filter("c1 % 10  > 0")
+                      .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
+                      .planNode();
+
+     assertQuery(vPlan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+
+
+     auto message = vPlan->toString(true, true);
+     LOG(INFO)
+         << "Before transform, velox plan in veloxSubstraitRoundTripFilterProject is: \n"
+         << message << std::endl;
+     std::cout << "vPlan before substrait trans is====================\n" << message << std::endl;
+
+     v2SPlanConvertor->veloxToSubstraitIR(vPlan, *sPlan);
+     LOG(INFO)
+         << "After transform from velox, substrait plan in veloxSubstraitRoundTripFilterProject is :"
+         << std::endl;
+     sPlan->PrintDebugString();
+
+     // convert back
+     auto vPlan2 = s2VPlanConvertor->substraitIRToVelox(*sPlan);
+
+     auto mesage2 = vPlan2->toString(true, true);
+     LOG(INFO)
+         << "After transform from substrait, velox plan in veloxSubstraitRoundTripFilterProject is\n"
+         << mesage2 << std::endl;
+
+
+     assertQuery(vPlan2, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+
+     std::cout << "vPlan2  after trans from substrait and assertQuery  is================\n" << mesage2 << std::endl;
+     vPlan2->toString(true, true);
+   }
   void assertVeloxSubstraitRoundTripValues(
       std::vector<RowVectorPtr>&& vectors) {
     auto vPlan = PlanBuilder().values(vectors).planNode();
@@ -265,16 +336,18 @@ TEST_F(SubstraitVeloxPlanConverterTest, veloxToSubstraitFilterNode) {
   assertVeloxToSubstraitFilter(std::move(vectors));
 }
 
-TEST_F(SubstraitVeloxPlanConverterTest, filterProject) {
+TEST_F(SubstraitVeloxPlanConverterTest, veloxSubstraitRoundTripFilterProject) {
   std::vector<RowVectorPtr> vectors;
   vectors = makeVector(3, 4, 2);
   createDuckDbTable(vectors);
 
-  auto plan = PlanBuilder()
-                  .values(vectors)
-                  .filter("c1 % 10  > 0")
-                  .project(std::vector<std::string>{"c0", "c1", "c0 + c1"})
-                  .planNode();
+  assertVeloxSubstraitRoundTripFilterProject(std::move(vectors));
+}
 
-  assertQuery(plan, "SELECT c0, c1, c0 + c1 FROM tmp WHERE c1 % 10 > 0");
+TEST_F(SubstraitVeloxPlanConverterTest, filterProjectFused) {
+  std::vector<RowVectorPtr> vectors;
+  vectors = makeVector(3, 4, 2);
+  createDuckDbTable(vectors);
+
+  assertFilterProjectFused(std::move(vectors));
 }

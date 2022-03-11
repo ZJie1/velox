@@ -17,13 +17,14 @@
 #include "SubstraitVeloxPlanConvertor.h"
 #include "GlobalCommonVariable.h"
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor{
 
 // Velox Plan to Substrait
 void VeloxToSubstraitPlanConvertor::veloxToSubstraitIR(
     std::shared_ptr<const PlanNode> vPlan,
     substrait::Plan& sPlan) {
   // Assume only accepts a single plan fragment
+  //TODO: convert the Split RootNode get from dispatcher to RootRel
   substrait::Rel* sRel = sPlan.add_relations()->mutable_rel();
   veloxToSubstraitIR(vPlan, sRel);
 }
@@ -36,13 +37,13 @@ void VeloxToSubstraitPlanConvertor::veloxToSubstraitIR(
   if (auto filterNode =
           std::dynamic_pointer_cast<const FilterNode>(vPlanNode)) {
     auto sFilterRel = sRel->mutable_filter();
-    transformVFilter(filterNode, sFilterRel, sGlobalMapping_);
+    transformVFilter(filterNode, sFilterRel);
     relCommon = sFilterRel->mutable_common();
   }
   if (auto aggNode =
           std::dynamic_pointer_cast<const AggregationNode>(vPlanNode)) {
     auto sAggRel = sRel->mutable_aggregate();
-    transformVAggregateNode(aggNode, sAggRel, sGlobalMapping_);
+    transformVAggregateNode(aggNode, sAggRel);
     relCommon = sAggRel->mutable_common();
   }
   if (auto vValuesNode =
@@ -51,12 +52,11 @@ void VeloxToSubstraitPlanConvertor::veloxToSubstraitIR(
     transformVValuesNode(vValuesNode, sReadRel);
     relCommon = sReadRel->mutable_common();
 
-    sGlobalMapping_->MergeFrom(*sReadRel->mutable_base_schema());
   }
   if (auto vProjNode =
           std::dynamic_pointer_cast<const ProjectNode>(vPlanNode)) {
     substrait::ProjectRel* sProjRel = sRel->mutable_project();
-    transformVProjNode(vProjNode, sProjRel, sGlobalMapping_);
+    transformVProjNode(vProjNode, sProjRel);
     relCommon = sProjRel->mutable_common();
   }
   if (auto partitionedOutputNode =
@@ -86,19 +86,33 @@ void VeloxToSubstraitPlanConvertor::veloxToSubstraitIR(
 }
 void VeloxToSubstraitPlanConvertor::transformVFilter(
     std::shared_ptr<const FilterNode> vFilterNode,
-    substrait::FilterRel* sFilterRel,
-    substrait::NamedStruct* sGlobalMapping) {
+    substrait::FilterRel* sFilterRel) {
   const PlanNodeId vId = vFilterNode->id();
-  std::shared_ptr<const PlanNode> vSource = vFilterNode->sources()[0];
+  std::shared_ptr<const PlanNode> vSource;
+  std::vector<std::shared_ptr<const PlanNode>> vSources = vFilterNode->sources();
+  //check how many inputs there have
+  int64_t vSourceSize = vSources.size();
+  if (vSourceSize == 0) {
+    VELOX_FAIL("Filter Node must have input");
+  } else if (vSourceSize == 1) {
+    vSource = vSources[0];
+  } else {
+    // TODO
+    // select one in the plan fragment pass to transformVExpr
+    //  and the other change into root or simpleCapture.
+  }
   std::shared_ptr<const ITypedExpr> vFilterCondition = vFilterNode->filter();
 
   substrait::Rel* sFilterInput = sFilterRel->mutable_input();
   substrait::Expression* sFilterCondition = sFilterRel->mutable_condition();
   //   Build source
   veloxToSubstraitIR(vSource, sFilterInput);
+
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
   //   Construct substrait expr
-  v2SExprConvertor.transformVExpr(
-      sFilterCondition, vFilterCondition, sGlobalMapping);
+  v2SExprConvertor_.transformVExpr(
+      sFilterCondition, vFilterCondition,vPreNodeOutPut);
+  sFilterRel->mutable_common()->mutable_direct();
 }
 
 void VeloxToSubstraitPlanConvertor::transformVValuesNode(
@@ -111,7 +125,7 @@ void VeloxToSubstraitPlanConvertor::transformVValuesNode(
 
   substrait::NamedStruct* sBaseSchema =
       sReadRel->mutable_base_schema();
-  v2STypeConvertor.vRowTypePtrToSNamedStruct(vOutPut, sBaseSchema);
+  v2STypeConvertor_.vRowTypePtrToSNamedStruct(vOutPut, sBaseSchema);
 
   const PlanNodeId id = vValuesNode->id();
   // sread.virtual_table().values_size(); multi rows
@@ -133,15 +147,15 @@ void VeloxToSubstraitPlanConvertor::transformVValuesNode(
 
       VectorPtr children = rowValue->childAt(column);
       sField =
-          v2STypeConvertor.processVeloxValueByType(sLitValue, sField, children);
+          v2STypeConvertor_.processVeloxValueByType(sLitValue, sField, children);
     }
   }
+  sReadRel->mutable_common()->mutable_direct();
 }
 
 void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
     std::shared_ptr<const AggregationNode> vAggNode,
-    substrait::AggregateRel* sAggRel,
-    substrait::NamedStruct* sGlobalMapping) {
+    substrait::AggregateRel* sAggRel) {
   PlanNodeId vPlanNodeId = vAggNode->id();
   AggregationNode::Step vStep = vAggNode->step();
   std::vector<std::shared_ptr<const FieldAccessTypedExpr>> vGroupingKeys =
@@ -153,18 +167,41 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
       vAggNode->aggregateMasks();
   // TODO now this value must be false
   bool vIgnoreNullKeys = vAggNode->ignoreNullKeys();
-  std::shared_ptr<const PlanNode> vSource = vAggNode->sources()[0];
+
+  // check how many inputs there have
+  std::shared_ptr<const PlanNode> vSource;
+  std::vector<std::shared_ptr<const PlanNode>> vSources = vAggNode->sources();
+
+  int64_t vSourceSize = vSources.size();
+  if (vSourceSize == 0) {
+    VELOX_FAIL("Aggregate Node must have input");
+  } else if (vSourceSize == 1) {
+    vSource = vSources[0];
+  } else {
+    // TODO
+    // select one in the plan fragment pass to transformVExpr
+    //  and the other change into root or simpleCapture.
+  }
+
   const RowTypePtr vOutput = vAggNode->outputType();
 
   substrait::Rel* sAggInput = sAggRel->mutable_input();
   veloxToSubstraitIR(vSource, sAggInput);
 
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
+  std::vector<std::string> vPreNodeColNames = vPreNodeOutPut->names();
+  std::vector<std::shared_ptr<const velox::Type>> vPreNodeColTypes =
+      vPreNodeOutPut->children();
+  int64_t vPreNodeColNums = vPreNodeColNames.size();
+  int64_t sAggEmitReMapId = vPreNodeColNums;
+
   substrait::RelCommon_Emit* sAggEmit =
       sAggRel->mutable_common()->mutable_emit();
-  substrait::NamedStruct* sNewOutMapping =
-      sAggEmit->add_output_mapping();
+  //TODO
+  /*substrait::NamedStruct* sNewOutMapping =
+      sAggEmit->add_output_mapping();*/
   substrait::Type* sGlobalMappingStructType =
-      sGlobalMapping->mutable_struct_()->add_types();
+      sGlobalMapping_->mutable_struct_()->add_types();
 
   // set the value of substrait agg emit.
   int64_t vOutputSize = vOutput->size();
@@ -179,7 +216,8 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
       vOutputChildSize,
       "check the number of Velox Output Names and Velox Output children size");
 
-  for (int i = 0; i < vOutputSize; i++) {
+  //TODO
+/*  for (int i = 0; i < vOutputSize; i++) {
     sNewOutMapping->add_index(i);
     auto vOutputName = vOutput->names().at(i);
     sNewOutMapping->add_names(vOutputName);
@@ -188,7 +226,7 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
         sNewOutMapping->mutable_struct_()->add_types();
     v2STypeConvertor.veloxTypeToSubstrait(
         vOutputchildType, sOutMappingStructType);
-  }
+  }*/
 
   // TODO need to add the processing of the situation with GROUPING SETS
   // or need to check what vGroupingKeys will be when there have GROUPING SETS
@@ -200,8 +238,8 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
         vGroupingKeys.at(i);
     substrait::Expression* sAggGroupingExpr =
         sAggGroupings->add_grouping_expressions();
-    v2SExprConvertor.transformVExpr(
-        sAggGroupingExpr, vGroupingKey, sGlobalMapping);
+    v2SExprConvertor_.transformVExpr(
+        sAggGroupingExpr, vGroupingKey,vPreNodeOutPut);
   }
 
   // vAggregatesSize should be equal or greter than the vAggregateMasks Size
@@ -215,7 +253,8 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
     std::shared_ptr<const FieldAccessTypedExpr> vAggMaskExpr =
         vAggregateMasks.at(i);
     // to see what this will be like linenume_7_true>
-    if (vAggMaskExpr.get()) {
+    //TODO
+ /*   if (vAggMaskExpr.get()) {
       std::string vAggMaskName = vAggMaskExpr->name();
       std::shared_ptr<const Type> vAggMaskType = vAggMaskExpr->type();
       int64_t sGlobalMappingSize = sGlobalMapping->index_size();
@@ -223,7 +262,7 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
       sGlobalMapping->add_names(vAggMaskName);
       v2STypeConvertor.veloxTypeToSubstrait(
           vAggMaskType, sGlobalMappingStructType);
-    }
+    }*/
   }
 
   for (int64_t i = 0; i < vAggregatesSize; i++) {
@@ -233,17 +272,17 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
         sAggMeasures->mutable_measure();
 
     substrait::Expression* sAggFunctionExpr = sAggFunction->add_args();
-    v2SExprConvertor.transformVExpr(
-        sAggFunctionExpr, vAggregatesExpr, sGlobalMapping);
+    v2SExprConvertor_.transformVExpr(
+        sAggFunctionExpr, vAggregatesExpr,vPreNodeOutPut);
 
     std::string vFunName = vAggregatesExpr->name();
-    int64_t sFunId = v2SFuncConvertor.registerSFunction(vFunName);
+    int64_t sFunId = v2SFuncConvertor_.registerSFunction(vFunName);
     sAggFunction->set_function_reference(sFunId);
 
     std::shared_ptr<const Type> vFunOutputType = vAggregatesExpr->type();
     substrait::Type* sAggFunOutputType =
         sAggFunction->mutable_output_type();
-    v2STypeConvertor.veloxTypeToSubstrait(vFunOutputType, sAggFunOutputType);
+    v2STypeConvertor_.veloxTypeToSubstrait(vFunOutputType, sAggFunOutputType);
 
     switch (vStep) {
       case core::AggregationNode::Step::kPartial: {
@@ -272,11 +311,12 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
     }
 
     // add new column(the result of the aggregate) to the sGlobalMapping
-    int64_t sGlobalMappingSize = sGlobalMapping->index_size();
+    //TODO
+/*    int64_t sGlobalMappingSize = sGlobalMapping->index_size();
     sGlobalMapping->add_index(sGlobalMappingSize + 1);
     sGlobalMapping->add_names(vAggregatesExpr->toString());
     v2STypeConvertor.veloxTypeToSubstrait(
-        vFunOutputType, sGlobalMappingStructType);
+        vFunOutputType, sGlobalMappingStructType);*/
 
     //  TODO need to verify
     //  transform the mask Expr if have.
@@ -286,8 +326,8 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
       std::shared_ptr<const FieldAccessTypedExpr> vAggregateMask =
           vAggregateMasks.at(i);
       if (vAggregateMask.get()) {
-        v2SExprConvertor.transformVExpr(
-            sAggFilter, vAggregateMask, sGlobalMapping);
+        v2SExprConvertor_.transformVExpr(
+            sAggFilter, vAggregateMask, vPreNodeOutPut);
       }
     }
   }
@@ -295,62 +335,67 @@ void VeloxToSubstraitPlanConvertor::transformVAggregateNode(
 
 void VeloxToSubstraitPlanConvertor::transformVProjNode(
     std::shared_ptr<const ProjectNode> vProjNode,
-    substrait::ProjectRel* sProjRel,
-    substrait::NamedStruct* sGlobalMapping) {
+    substrait::ProjectRel* sProjRel) {
+  // the info from vProjNode
   const PlanNodeId vId = vProjNode->id();
   std::vector<std::string> vNames = vProjNode->names();
   std::vector<std::shared_ptr<const ITypedExpr>> vProjections =
       vProjNode->projections();
-  std::shared_ptr<const PlanNode> vSource = vProjNode->sources()[0];
-
   const RowTypePtr vOutput = vProjNode->outputType();
 
+  // check how many inputs there have
+  std::vector<std::shared_ptr<const PlanNode>> vSources = vProjNode->sources();
+  //the PreNode
+  std::shared_ptr<const PlanNode> vSource;
+  int64_t vSourceSize = vSources.size();
+  if (vSourceSize == 0) {
+    VELOX_FAIL("Project Node must have input");
+  } else if (vSourceSize == 1) {
+    vSource = vSources[0];
+  } else {
+    // TODO
+    // select one in the plan fragment pass to transformVExpr
+    //  and the other change into root or simpleCapture.
+  }
+
+  //process the source Node.
   substrait::Rel* sProjInput = sProjRel->mutable_input();
   veloxToSubstraitIR(vSource, sProjInput);
 
+  // remapping the output
   substrait::RelCommon_Emit* sProjEmit =
       sProjRel->mutable_common()->mutable_emit();
-  substrait::NamedStruct* sNewOutMapping =
-      sProjEmit->add_output_mapping();
-  substrait::Type* sGlobalMappingStructType =
-      sGlobalMapping->mutable_struct_()->add_types();
 
   int64_t vProjectionSize = vProjections.size();
+
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
+  std::vector<std::string> vPreNodeColNames = vPreNodeOutPut->names();
+  std::vector<std::shared_ptr<const velox::Type>> vPreNodeColTypes =
+      vPreNodeOutPut->children();
+  int64_t vPreNodeColNums = vPreNodeColNames.size();
+  int64_t sProjEmitReMapId = vPreNodeColNums;
+
   for (int64_t i = 0; i < vProjectionSize; i++) {
     std::shared_ptr<const ITypedExpr>& vExpr = vProjections.at(i);
     substrait::Expression* sExpr = sProjRel->add_expressions();
 
-    v2SExprConvertor.transformVExpr(sExpr, vExpr, sGlobalMapping);
+    v2SExprConvertor_.transformVExpr(sExpr, vExpr, vPreNodeOutPut);
     // add outputMapping for each vExpr
     const std::shared_ptr<const Type> vExprType = vExpr->type();
-    substrait::Type* sOutMappingStructType =
-        sNewOutMapping->mutable_struct_()->add_types();
-    v2STypeConvertor.veloxTypeToSubstrait(vExprType, sOutMappingStructType);
 
-    sNewOutMapping->add_index(i);
-    sNewOutMapping->add_names(vNames[i]);
-    // TODO: or just use this :sNewOutMapping->add_names(vNames[i]);
-    if (auto vFieldExpr =
-            std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vExpr)) {
-      std::string vExprName = vFieldExpr->name();
-      // sNewOutMapping->add_names(vExprName);
-      continue;
-    } else if (
-        auto vCallTypeExpr =
-            std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
-      // sNewOutMapping->add_names(vCallTypeExpr->toString());
-      // TODO alias names should be add here?
-
-      // add here  globalMapping
-      auto sGlobalSize = sGlobalMapping->index_size();
-      sGlobalMapping->add_index(sGlobalSize + 1);
-      sGlobalMapping->add_names(vCallTypeExpr->toString());
-      v2STypeConvertor.veloxTypeToSubstrait(
-          vExprType, sGlobalMappingStructType);
-
-    } else {
-      LOG(WARNING) << "the type haven't added" << std::endl;
+    bool sProjEmitReMap = false;
+    for (int64_t j = 0 ; j< vPreNodeColNums; j++){
+      if (vExprType == vPreNodeColTypes[j] &&
+          vOutput->nameOf(i) == vPreNodeColNames[j]) {
+        sProjEmit->add_output_mapping(j);
+        sProjEmitReMap = true;
+        break;
+      }
     }
+    if(!sProjEmitReMap){
+      sProjEmit->add_output_mapping(sProjEmitReMapId++);
+    }
+
   }
 
   return;
@@ -386,11 +431,14 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionedOutputNode(
   substrait::RelCommon_Emit* sOutputEmit =
       sDistRel->mutable_common()->mutable_emit();
 
+  //TODO
+/*
   for (int64_t i = 0; i < vOutSize; i++) {
     substrait::NamedStruct* sOutputMapping =
         sOutputEmit->mutable_output_mapping(i);
     v2STypeConvertor.vRowTypePtrToSNamedStruct(vOutPut, sOutputMapping);
   }
+*/
 
   //  Back to handle source node
   veloxToSubstraitIR(
@@ -407,7 +455,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
           vPartitionedOutputNode->numPartitions());
   if (auto f = std::dynamic_pointer_cast<velox::exec::HashPartitionFunction>(
           factory)) {
-    auto func_id = v2SFuncConvertor.registerSFunction("HashPartitionFunction");
+    auto func_id = v2SFuncConvertor_.registerSFunction("HashPartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
     scala_function->set_function_reference(func_id);
@@ -426,7 +474,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
           std::dynamic_pointer_cast<velox::exec::RoundRobinPartitionFunction>(
               factory)) {
     auto func_id =
-        v2SFuncConvertor.registerSFunction("RoundRobinPartitionFunction");
+        v2SFuncConvertor_.registerSFunction("RoundRobinPartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
     scala_function->set_function_reference(func_id);
@@ -435,7 +483,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
   } else if (
       auto f = std::dynamic_pointer_cast<
           velox::connector::hive::HivePartitionFunction>(factory)) {
-    auto func_id = v2SFuncConvertor.registerSFunction("HivePartitionFunction");
+    auto func_id = v2SFuncConvertor_.registerSFunction("HivePartitionFunction");
     auto scala_function =
         sDistRel->mutable_d_field()->mutable_expr()->mutable_scalar_function();
     scala_function->set_function_reference(func_id);
@@ -447,7 +495,7 @@ void VeloxToSubstraitPlanConvertor::transformVPartitionFunc(
 std::shared_ptr<const PlanNode>
 SubstraitToVeloxPlanConvertor::substraitIRToVelox(
     const substrait::Plan& sPlan) {
-  s2VFuncConvertor.initFunctionMap();
+  s2VFuncConvertor_.initFunctionMap();
   const substrait::Rel& sRel = sPlan.relations(0).rel();
   return substraitIRToVelox(sRel, 0);
 }
@@ -484,9 +532,15 @@ std::shared_ptr<FilterNode> SubstraitToVeloxPlanConvertor::transformSFilter(
     const substrait::Rel& sRel,
     int depth) {
   const substrait::FilterRel& sFilter = sRel.filter();
-  std::shared_ptr<const PlanNode> vSource =
-      substraitIRToVelox(sFilter.input(), depth + 1);
+  std::shared_ptr<const PlanNode> vSource;
+  if(sFilter.has_input()){
+    vSource =
+        substraitIRToVelox(sFilter.input(), depth + 1);
+  }else{
+    VELOX_FAIL("FilterRel must have input");
+  }
 
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
   if (!sFilter.has_condition()) {
     return std::make_shared<FilterNode>(
         std::to_string(depth), nullptr, vSource);
@@ -495,7 +549,7 @@ std::shared_ptr<FilterNode> SubstraitToVeloxPlanConvertor::transformSFilter(
   const substrait::Expression& sExpr = sFilter.condition();
   return std::make_shared<FilterNode>(
       std::to_string(depth),
-      s2VExprConvertor.transformSExpr(sExpr, sGlobalMapping_),
+      s2VExprConvertor_.transformSExpr(sExpr,vPreNodeOutPut),
       vSource);
 }
 
@@ -504,19 +558,19 @@ std::shared_ptr<PlanNode> SubstraitToVeloxPlanConvertor::transformSRead(
     int depth) {
   const substrait::ReadRel& sRead = sRel.read();
   std::shared_ptr<const velox::RowType> vOutputType =
-      s2VTypeConvertor.sNamedStructToVRowTypePtr(sRead.base_schema());
+      s2VTypeConvertor_.sNamedStructToVRowTypePtr(sRead.base_schema());
 
   // TODO need to add the impl of type local_files
 
   if (sRead.has_filter()) {
     return std::make_shared<FilterNode>(
         std::to_string(depth),
-        s2VExprConvertor.transformSExpr(sRead.filter(), sGlobalMapping_),
+        s2VExprConvertor_.transformSExpr(sRead.filter(), vOutputType),
         substraitIRToVelox(sRel, depth + 1));
   }
 
   if (sRead.has_projection()) {
-    throw std::runtime_error("Unsupported projection in sRead ");
+    VELOX_NYI("Unsupported projection in transformSRead ");
   }
 
   if (sRead.has_named_table()) {
@@ -544,7 +598,7 @@ std::shared_ptr<PlanNode> SubstraitToVeloxPlanConvertor::transformSRead(
 
   if (sRead.has_virtual_table()) {
     bool parallelizable = false;
-    pool_ = scopedPool.get();
+    pool_ = scopedPool_.get();
 
     // TODO this should be the vector.size* batchSize .
     int64_t numRows = sRead.virtual_table().values_size();
@@ -583,7 +637,7 @@ std::shared_ptr<PlanNode> SubstraitToVeloxPlanConvertor::transformSRead(
               vOutputChildType->kind(),
               vOutputType->childAt(col),
               batchSize,
-              *scopedPool);
+              *scopedPool_);
         }
         children.emplace_back(childrenValue);
       }
@@ -620,15 +674,22 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
   std::vector<std::shared_ptr<const FieldAccessTypedExpr>> preGroupedKeys;
 
   const substrait::AggregateRel& sAgg = sRel.aggregate();
-  std::shared_ptr<const PlanNode> vSource =
-      substraitIRToVelox(sAgg.input(), depth + 1);
+  std::shared_ptr<const PlanNode> vSource;
+  if(sAgg.has_input()){
+    vSource =
+        substraitIRToVelox(sAgg.input(), depth + 1);
+  }else{
+    VELOX_FAIL("Projrct Rel must have input");
+  }
+
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
 
   // TODO need to confirm whether this is only for one grouping set, GROUP BY
   // a,b,c. Not fit for GROUPING SETS ???
   for (auto& sGroup : sAgg.groupings()) {
     for (auto& sExpr : sGroup.grouping_expressions()) {
       std::shared_ptr<const ITypedExpr> vGroupingKey =
-          s2VExprConvertor.transformSExpr(sExpr, sGlobalMapping_);
+          s2VExprConvertor_.transformSExpr(sExpr, vPreNodeOutPut);
       groupingKey =
           std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vGroupingKey);
       groupingKeys.push_back(groupingKey);
@@ -647,7 +708,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
         aggregateMask = {};
       } else {
         std::shared_ptr<const ITypedExpr> vAggMask =
-            s2VExprConvertor.transformSExpr(sAggMask, sGlobalMapping_);
+            s2VExprConvertor_.transformSExpr(sAggMask,vPreNodeOutPut);
         aggregateMask =
             std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vAggMask);
       }
@@ -657,7 +718,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
     std::vector<std::shared_ptr<const ITypedExpr>> children;
     std::string out_name;
     std::string function_name =
-        s2VFuncConvertor.FindFunction(sMeasure.function_reference());
+        s2VFuncConvertor_.FindFunction(sMeasure.function_reference());
     out_name = function_name;
     // AggregateFunction.args should be one for velox . if not, should do
     // project firstly
@@ -666,7 +727,7 @@ SubstraitToVeloxPlanConvertor::transformSAggregate(
     // situation with maskExpression.
     if (sMeasureArgSize == 1) {
       auto vMeasureArgExpr =
-          s2VExprConvertor.transformSExpr(sMeasure.args()[0], sGlobalMapping_);
+          s2VExprConvertor_.transformSExpr(sMeasure.args()[0], vPreNodeOutPut);
       if (auto vMeasureArg =
               std::dynamic_pointer_cast<const CallTypedExpr>(vMeasureArgExpr)) {
         aggregates.push_back(vMeasureArg);
@@ -720,25 +781,21 @@ std::shared_ptr<ProjectNode> SubstraitToVeloxPlanConvertor::transformSProject(
   const substrait::ProjectRel& sProj = sRel.project();
   std::vector<std::shared_ptr<const ITypedExpr>> vExpressions;
   std::vector<std::string> names;
+  std::shared_ptr<const PlanNode> vSource;
+  if (sProj.has_input()) {
+    vSource = substraitIRToVelox(sProj.input(), depth + 1);
+  } else {
+    VELOX_FAIL("Project Rel must have input");
+  }
 
-  std::shared_ptr<const PlanNode> vSource =
-      substraitIRToVelox(sProj.input(), depth + 1);
-
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
+  vExpressions.reserve(sProj.expressions_size());
+  int64_t colId = 0;
   for (auto& sExpr : sProj.expressions()) {
     std::shared_ptr<const ITypedExpr> vExpr =
-        s2VExprConvertor.transformSExpr(sExpr, sGlobalMapping_);
+        s2VExprConvertor_.transformSExpr(sExpr, vPreNodeOutPut);
     vExpressions.push_back(vExpr);
-  }
-  // TODO check if there should be depth? now it's only one output_mapping, so
-  // depth = 0 is right for the simple case(proj->values)
-  // sProjOutMap = sProj.common().emit().output_mapping(depth);
-  substrait::NamedStruct sProjOutMap =
-      sProj.common().emit().output_mapping(0);
-  // the proj common is always start from 0. because the way we trans from velox
-  // to substrait.
-  int64_t sProjOutMapSize = sProjOutMap.index_size();
-  for (int64_t i = 0; i < sProjOutMapSize; i++) {
-    names.push_back(sProjOutMap.names(i));
+    names.emplace_back(fmt::format("p{}_{}", depth, colId++));
   }
 
   std::shared_ptr<ProjectNode> vProjNode = std::make_shared<ProjectNode>(
@@ -757,8 +814,16 @@ std::shared_ptr<OrderByNode> SubstraitToVeloxPlanConvertor::transformSSort(
   std::vector<SortOrder> sortingOrders;
   bool isPartial;
 
-  std::shared_ptr<const PlanNode> vSource =
-      substraitIRToVelox(sSort.input(), depth + 1);
+  std::shared_ptr<const PlanNode> vSource;
+  if(sSort.has_input()){
+    vSource =
+        substraitIRToVelox(sSort.input(), depth + 1);
+  }else{
+    VELOX_FAIL("Projrct Rel must have input");
+  }
+
+  RowTypePtr vPreNodeOutPut = vSource->outputType();
+
 
   isPartial = sSort.common().distribution().d_type() == 0 ? true : false;
 
@@ -768,7 +833,7 @@ std::shared_ptr<OrderByNode> SubstraitToVeloxPlanConvertor::transformSSort(
     // TODO check whether  ssort.common() need to be the node output before
     const substrait::Expression sExpr = sOrderField.expr();
     std::shared_ptr<const ITypedExpr> sortingKey =
-        s2VExprConvertor.transformSExpr(sExpr, sGlobalMapping_);
+        s2VExprConvertor_.transformSExpr(sExpr, vPreNodeOutPut);
     auto constSortKey =
         std::dynamic_pointer_cast<const FieldAccessTypedExpr>(sortingKey);
     sortingKeys.push_back(constSortKey);
@@ -809,4 +874,4 @@ SubstraitToVeloxPlanConvertor::transformSDistribute(
   // TODO
 }
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor

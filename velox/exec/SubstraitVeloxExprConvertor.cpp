@@ -16,28 +16,30 @@
 
 #include "SubstraitVeloxExprConvertor.h"
 
-namespace facebook::velox {
+#include "velox/expression/ControlExpr.h"
+
+#include "GlobalCommonVariable.h"
+
+namespace facebook::velox::substraitconvertor  {
 
 void VeloxToSubstraitExprConvertor::transformVExpr(
     substrait::Expression* sExpr,
     const std::shared_ptr<const ITypedExpr>& vExpr,
-    substrait::NamedStruct* sGlobalMapping) {
-  // TODO
+    RowTypePtr vPreNodeOutPut) {
   if (std::shared_ptr<const ConstantTypedExpr> vConstantExpr =
           std::dynamic_pointer_cast<const ConstantTypedExpr>(vExpr)) {
     // Literal
-    substrait::Expression_Literal* sLiteralExpr = sExpr->mutable_literal();
-    transformVConstantExpr(vConstantExpr->value(), sLiteralExpr);
+    transformVConstantExpr(vConstantExpr->value(), sExpr->mutable_literal());
     return;
-  } else if (
-      auto vCallTypeExpr =
+  }
+  if (auto vCallTypeExpr =
           std::dynamic_pointer_cast<const CallTypedExpr>(vExpr)) {
     std::shared_ptr<const Type> vExprType = vCallTypeExpr->type();
     std::vector<std::shared_ptr<const ITypedExpr>> vCallTypeInputs =
         vCallTypeExpr->inputs();
     std::string vCallTypeExprFunName = vCallTypeExpr->name();
     // different by function names.
-    if (vCallTypeExprFunName == "if") {
+    if (vCallTypeExprFunName == exec::kIf) {
       substrait::Expression_IfThen* sFun = sExpr->mutable_if_then();
       int64_t vCallTypeInputSize = vCallTypeInputs.size();
       for (int64_t i = 0; i < vCallTypeInputSize; i++) {
@@ -48,7 +50,7 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
         //  the if or then or else expr can debug to find when process project
         //  node
       }
-    } else if (vCallTypeExprFunName == "switch") {
+    } else if (vCallTypeExprFunName == exec::kSwitch) {
       substrait::Expression_SwitchExpression* sFun =
           sExpr->mutable_switch_expression();
       // TODO
@@ -57,21 +59,21 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
           sExpr->mutable_scalar_function();
       // TODO need to change yaml file to register functin, now is dummy.
       // the substrait communcity have changed many in this part...
-      int64_t sFunId = v2SFuncConvertor.registerSFunction(vCallTypeExprFunName);
+      uint32_t sFunId =
+          v2SFuncConvertor_.registerSFunction(vCallTypeExprFunName);
       LOG(INFO) << "sFunId is " << sFunId << std::endl;
       sFun->set_function_reference(sFunId);
 
       for (auto& vArg : vCallTypeInputs) {
         substrait::Expression* sArg = sFun->add_args();
-        transformVExpr(sArg, vArg, sGlobalMapping);
+        transformVExpr(sArg, vArg, vPreNodeOutPut);
       }
       substrait::Type* sFunType = sFun->mutable_output_type();
-      v2STypeConvertor.veloxTypeToSubstrait(vExprType, sFunType);
+      v2STypeConvertor_.veloxTypeToSubstrait(vExprType, sFunType);
       return;
     }
-
-  } else if (
-      auto vFieldExpr =
+  }
+  if (auto vFieldExpr =
           std::dynamic_pointer_cast<const FieldAccessTypedExpr>(vExpr)) {
     // kSelection
     const std::shared_ptr<const Type> vExprType = vFieldExpr->type();
@@ -82,37 +84,43 @@ void VeloxToSubstraitExprConvertor::transformVExpr(
             ->mutable_direct_reference()
             ->mutable_struct_field();
 
-    int64_t sIndex;
-    int64_t sGlobMapNameSize = sGlobalMapping->names_size();
-    for (int64_t i = 0; i < sGlobMapNameSize; i++) {
-      if (sGlobalMapping->names(i) == vExprName) {
-        // get the index
-        sIndex = sGlobalMapping->index(i);
+    std::vector<std::string> vPreNodeColNames = vPreNodeOutPut->names();
+    std::vector<std::shared_ptr<const velox::Type>> vPreNodeColTypes =
+        vPreNodeOutPut->children();
+    int64_t vPreNodeColNums = vPreNodeColNames.size();
+    int64_t sCurrentColId = -1;
+
+    VELOX_CHECK_EQ(vPreNodeColNums, vPreNodeColTypes.size());
+
+    for (int64_t i = 0; i < vPreNodeColNums; i++) {
+      if (vPreNodeColNames[i] == vExprName &&
+          vPreNodeColTypes[i] == vExprType) {
+        sCurrentColId = i;
         break;
       }
     }
-
-    sDirectStruct->set_field(sIndex);
+    // cannot go to here???
+    if (sCurrentColId == -1) {
+      sCurrentColId = vPreNodeColNums + 1;
+    }
+    sDirectStruct->set_field(sCurrentColId);
 
     return;
-
-  } else if (
-      auto vCastExpr = std::dynamic_pointer_cast<const CastTypedExpr>(vExpr)) {
-    std::shared_ptr<const Type> vExprType = vCastExpr->type();
+  }
+  if (auto vCastExpr = std::dynamic_pointer_cast<const CastTypedExpr>(vExpr)) {
     std::vector<std::shared_ptr<const ITypedExpr>> vCastTypeInputs =
         vCastExpr->inputs();
     substrait::Expression_Cast* sCastExpr = sExpr->mutable_cast();
-    v2STypeConvertor.veloxTypeToSubstrait(vExprType, sCastExpr->mutable_type());
+    v2STypeConvertor_.veloxTypeToSubstrait(
+        vCastExpr->type(), sCastExpr->mutable_type());
 
     for (auto& vArg : vCastTypeInputs) {
-      substrait::Expression* sExpr = sCastExpr->mutable_input();
-      transformVExpr(sExpr, vArg, sGlobalMapping);
+      transformVExpr(sCastExpr->mutable_input(), vArg, vPreNodeOutPut);
     }
     return;
 
   } else {
-    throw std::runtime_error(
-        "Unsupport Expr " + vExpr->toString() + "in Substrait");
+    VELOX_NYI("Unsupport Expr '{}' in Substrait", vExpr->toString());
   }
 }
 
@@ -126,7 +134,8 @@ void VeloxToSubstraitExprConvertor::transformVConstantExpr(
     }
     case velox::TypeKind::VARCHAR: {
       auto vCharValue = vConstExpr.value<StringView>();
-      substrait::Expression_Literal::VarChar* sVarChar = new substrait::Expression_Literal::VarChar();
+      substrait::Expression_Literal::VarChar* sVarChar =
+          new substrait::Expression_Literal::VarChar();
       sVarChar->set_value(vCharValue.data());
       sVarChar->set_length(vCharValue.size());
       sLiteralExpr->set_allocated_var_char(sVarChar);
@@ -163,57 +172,60 @@ void VeloxToSubstraitExprConvertor::transformVConstantExpr(
       break;
     }
     default:
-      throw std::runtime_error(
-          "Unsupported constant Type" + mapTypeKindToName(vConstExpr.kind()));
+      VELOX_NYI(
+          "Unsupported constant Type '{}' ",
+          mapTypeKindToName(vConstExpr.kind()));
   }
 }
 
 // SubstraitToVeloxExprConvertor
 std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
     const substrait::Expression& sExpr,
-    substrait::NamedStruct* sGlobalMapping) {
+    RowTypePtr vPreNodeOutPut) {
   switch (sExpr.rex_type_case()) {
     case substrait::Expression::RexTypeCase::kLiteral: {
-      auto slit = sExpr.literal();
-      std::shared_ptr<const ITypedExpr> sConstant = transformSLiteralExpr(slit);
-      return sConstant;
+      return transformSLiteralExpr(sExpr.literal());
     }
     case substrait::Expression::RexTypeCase::kSelection: {
+      // TODO if(sExpr.selection().has_root_reference()){}
       if (!sExpr.selection().has_direct_reference() ||
           !sExpr.selection().direct_reference().has_struct_field()) {
-        throw std::runtime_error(
-            "Can only have direct struct references in selections");
+        VELOX_NYI("Can only have direct struct references in selections");
       }
 
-      auto outId = sExpr.selection().direct_reference().struct_field().field();
-      int64_t sGlobalMapSize = sGlobalMapping->index_size();
-      for (int64_t i = 0; i < sGlobalMapSize; i++) {
-        if (sGlobalMapping->index(i) == outId) {
-          auto sName = sGlobalMapping->names(i);
-          auto sType = sGlobalMapping->mutable_struct_()->types(i);
-          velox::TypePtr vType = s2VTypeConvertor.substraitTypeToVelox(sType);
-          // convert type to row
-          return std::make_shared<FieldAccessTypedExpr>(
-              vType, std::make_shared<InputTypedExpr>(vType), sName);
-        }
+      auto colId = sExpr.selection().direct_reference().struct_field().field();
+
+      std::vector<std::string> vPreNodeColNames = vPreNodeOutPut->names();
+      std::vector<std::shared_ptr<const velox::Type>> vPreNodeColTypes =
+          vPreNodeOutPut->children();
+      int64_t vPreNodeColNums = vPreNodeColNames.size();
+      if (colId <= vPreNodeColNums) {
+        // convert type to row
+        return std::make_shared<FieldAccessTypedExpr>(
+            vPreNodeColTypes[colId],
+            std::make_shared<InputTypedExpr>(vPreNodeColTypes[colId]),
+            vPreNodeColNames[colId]);
+      } else {
+        VELOX_FAIL("Missing the column with id '{}' .", colId);
       }
     }
     case substrait::Expression::RexTypeCase::kScalarFunction: {
       substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
+
       velox::TypePtr vScalaFunType =
-          s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
+          s2VTypeConvertor_.substraitTypeToVelox(sScalarFunc.output_type());
 
       std::vector<std::shared_ptr<const ITypedExpr>> children;
-      for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sGlobalMapping));
+      children.reserve(sScalarFunc.args_size());
+      for (auto& sArg : sScalarFunc.args()) {
+        children.push_back(transformSExpr(sArg, vPreNodeOutPut));
       }
       // TODO search function name by yaml extension
       std::string function_name =
-          s2VFuncConvertor.FindFunction(sExpr.scalar_function().function_reference());
+          s2VFuncConvertor_.FindFunction(sScalarFunc.function_reference());
       //  and or  try concatrow
-      if (function_name != "if" && function_name != "switch") {
+      if (function_name != exec::kIf && function_name != exec::kSwitch) {
         return std::make_shared<CallTypedExpr>(
             vScalaFunType, children, function_name);
       }
@@ -221,52 +233,50 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
     case substrait::Expression::RexTypeCase::kIfThen: {
       substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
       velox::TypePtr vScalaFunType =
-          s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
+          s2VTypeConvertor_.substraitTypeToVelox(sScalarFunc.output_type());
 
       std::vector<std::shared_ptr<const ITypedExpr>> children;
-      for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sGlobalMapping));
+      children.reserve(sScalarFunc.args_size());
+      for (auto& sArg : sScalarFunc.args()) {
+        children.push_back(transformSExpr(sArg, vPreNodeOutPut));
       }
       return std::make_shared<velox::core::CallTypedExpr>(
-          vScalaFunType, move(children), "if");
+          vScalaFunType, move(children), exec::kIf);
     }
     case substrait::Expression::RexTypeCase::kSwitchExpression: {
       substrait::Expression_ScalarFunction sScalarFunc =
           sExpr.scalar_function();
-      substrait::Type sScalaFunOutType = sScalarFunc.output_type();
       velox::TypePtr vScalaFunType =
-          s2VTypeConvertor.substraitTypeToVelox(sScalaFunOutType);
+          s2VTypeConvertor_.substraitTypeToVelox(sScalarFunc.output_type());
       std::vector<std::shared_ptr<const ITypedExpr>> children;
-      for (auto& sArg : sExpr.scalar_function().args()) {
-        children.push_back(transformSExpr(sArg, sGlobalMapping));
+      children.reserve(sScalarFunc.args_size());
+      for (auto& sArg : sScalarFunc.args()) {
+        children.push_back(transformSExpr(sArg, vPreNodeOutPut));
       }
       return std::make_shared<velox::core::CallTypedExpr>(
-          vScalaFunType, move(children), "switch");
+          vScalaFunType, move(children), exec::kSwitch);
     }
     case substrait::Expression::kCast: {
       substrait::Expression_Cast sCastExpr = sExpr.cast();
-
-      substrait::Type sCastType = sCastExpr.type();
       std::shared_ptr<const Type> vCastType =
-          s2VTypeConvertor.substraitTypeToVelox(sCastType);
+          s2VTypeConvertor_.substraitTypeToVelox(sCastExpr.type());
 
       // TODO add flag in substrait after. now is set false.
       bool nullOnFailure = false;
 
       std::vector<std::shared_ptr<const ITypedExpr>> vCastInputs;
-      substrait::Expression sCastInput = sCastExpr.input();
+      vCastInputs.reserve(1);
       std::shared_ptr<const ITypedExpr> vCastInput =
-          transformSExpr(sCastInput, sGlobalMapping);
+          transformSExpr(sCastExpr.input(), vPreNodeOutPut);
       vCastInputs.emplace_back(vCastInput);
 
       return std::make_shared<CastTypedExpr>(
           vCastType, vCastInputs, nullOnFailure);
     }
     default:
-      throw std::runtime_error(
-          "Unsupported expression type " +
+      VELOX_NYI(
+          "Unsupported expression type '{}'",
           std::to_string(sExpr.rex_type_case()));
   }
 }
@@ -274,9 +284,8 @@ std::shared_ptr<const ITypedExpr> SubstraitToVeloxExprConvertor::transformSExpr(
 std::shared_ptr<const ITypedExpr>
 SubstraitToVeloxExprConvertor::transformSLiteralExpr(
     const substrait::Expression_Literal& sLiteralExpr) {
-  variant sLiteralExprVariant =
-      s2VTypeConvertor.transformSLiteralType(sLiteralExpr);
-  return std::make_shared<ConstantTypedExpr>(sLiteralExprVariant);
+  return std::make_shared<ConstantTypedExpr>(
+      s2VTypeConvertor_.transformSLiteralType(sLiteralExpr));
 }
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor

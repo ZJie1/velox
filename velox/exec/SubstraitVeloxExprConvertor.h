@@ -24,37 +24,38 @@
 
 using namespace facebook::velox::core;
 
-namespace facebook::velox {
+namespace facebook::velox::substraitconvertor  {
 
 class VeloxToSubstraitExprConvertor {
  public:
   void transformVExpr(
       substrait::Expression* sExpr,
       const std::shared_ptr<const ITypedExpr>& vExpr,
-      substrait::NamedStruct* sGlobalMapping);
+      RowTypePtr vPreNodeOutPut);
 
   void transformVConstantExpr(
       const velox::variant& vConstExpr,
       substrait::Expression_Literal* sLiteralExpr);
 
  private:
-  VeloxToSubstraitTypeConvertor v2STypeConvertor;
-  VeloxToSubstraitFuncConvertor v2SFuncConvertor;
+  VeloxToSubstraitTypeConvertor v2STypeConvertor_;
+  VeloxToSubstraitFuncConvertor v2SFuncConvertor_;
 };
 
 class SubstraitToVeloxExprConvertor {
  public:
   std::shared_ptr<const ITypedExpr> transformSExpr(
       const substrait::Expression& sExpr,
-      substrait::NamedStruct* sGlobalMapping);
+      RowTypePtr vPreNodeOutPut);
 
   std::shared_ptr<const ITypedExpr> transformSLiteralExpr(
       const substrait::Expression_Literal& sLiteralExpr);
 
  private:
-  SubstraitToVeloxTypeConvertor s2VTypeConvertor;
-  SubstraitToVeloxFuncConvertor s2VFuncConvertor;
+  SubstraitToVeloxTypeConvertor s2VTypeConvertor_;
+  SubstraitToVeloxFuncConvertor s2VFuncConvertor_;
 };
 
-} // namespace facebook::velox
+} // namespace facebook::velox::substraitconvertor
+
 

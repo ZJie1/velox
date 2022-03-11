@@ -21,6 +21,8 @@
 
 #include "velox/exec/SubstraitVeloxPlanConvertor.h"
 
+using namespace facebook::velox::substraitconvertor;
+
 using facebook::velox::exec::Aggregate;
 
 using facebook::velox::test::BatchMaker;
