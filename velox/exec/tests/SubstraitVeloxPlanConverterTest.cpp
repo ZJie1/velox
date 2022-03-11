@@ -170,7 +170,7 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
                      .filter("e1 > 13")
                      .planNode();
 
-    assertQuery(vPlan, "SELECT c0, c1 FROM tmp where c0 % 100 + c1 % 50 >13");
+    assertQuery(vPlan, "SELECT c0, c1 ,c0 % 100 + c1 % 50 AS e1 FROM tmp where c0 % 100 + c1 % 50 >13");
 
     auto message = vPlan->toString(true, true);
     LOG(INFO)
@@ -192,7 +192,7 @@ class SubstraitVeloxPlanConverterTest : public OperatorTestBase {
         << "After transform from substrait, velox plan in assertFilterProjectFused is\n"
         << mesage2 << std::endl;
 
-    assertQuery(vPlan2, "SELECT c0, c1 FROM tmp where c0 % 100 + c1 % 50 >13");
+    assertQuery(vPlan2, "SELECT c0, c1,c0 % 100 + c1 % 50 AS e1 FROM tmp where c0 % 100 + c1 % 50 >13");
     vPlan2->toString(true, true);
   }
 
