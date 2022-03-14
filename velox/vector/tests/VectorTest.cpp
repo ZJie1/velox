@@ -697,8 +697,8 @@ class VectorTest : public testing::Test {
             oddIndices.size() - oddIndices.size() / 2));
     std::stringstream evenStream;
     std::stringstream oddStream;
-    OutputStream eventOutputStream(&evenStream);
-    OutputStream oddOutputStream(&oddStream);
+    OStreamOutputStream eventOutputStream(&evenStream);
+    OStreamOutputStream oddOutputStream(&oddStream);
     even.flush(&eventOutputStream);
     odd.flush(&oddOutputStream);
     ByteStream input;
@@ -1503,4 +1503,11 @@ TEST_F(VectorTest, clearAllNulls) {
   vector->clearAllNulls();
   ASSERT_FALSE(vector->mayHaveNulls());
   ASSERT_FALSE(vector->isNullAt(50));
+}
+
+TEST_F(VectorTest, constantSetNull) {
+  auto vectorMaker = std::make_unique<test::VectorMaker>(pool_.get());
+  auto vector = vectorMaker->constantVector<int64_t>({{0}});
+
+  EXPECT_THROW(vector->setNull(0, true), VeloxRuntimeError);
 }

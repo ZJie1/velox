@@ -16,14 +16,22 @@ add_executable(
   velox_expression_test
   ExprTest.cpp
   CastExprTest.cpp
+  MapWriterTest.cpp
+  ArrayWriterTest.cpp
+  RowWriterTest.cpp
   EvalSimplifiedTest.cpp
   SignatureBinderTest.cpp
   SimpleFunctionTest.cpp
+  SimpleFunctionCallNullFreeTest.cpp
   SimpleFunctionPresetNullsTest.cpp
   ArrayViewTest.cpp
-  ArrayProxyTest.cpp
+  StringWriterTest.cpp
+  ArrayWriterTest.cpp
+  StringWriterTest.cpp
   MapViewTest.cpp
   RowViewTest.cpp
+  GenericViewTest.cpp
+  TryExprTest.cpp
   VariadicViewTest.cpp
   VectorReaderTest.cpp)
 

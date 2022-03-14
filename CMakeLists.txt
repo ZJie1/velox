@@ -41,7 +41,11 @@ option(VELOX_ENABLE_PARSE "Build parser used for unit tests." ON)
 option(VELOX_ENABLE_EXAMPLES
        "Build examples. This will enable VELOX_ENABLE_EXPRESSION automatically."
        ON)
+<<<<<<< HEAD
 option(VELOX_ENABLE_SUBSTRAIT "Buid Substrait-to-Velox converter." ON)
+=======
+option(VELOX_ENABLE_SUBSTRAIT "Buid Substrait-to-Velox converter." OFF)
+>>>>>>> e2d7c6cb8c074831b56dcd131dcb1217ac3838a0
 option(VELOX_ENABLE_BENCHMARKS "Build velox top level benchmarks." OFF)
 option(VELOX_ENABLE_S3 "Build S3 Connector" OFF)
 option(VELOX_ENABLE_PARQUET "Enable Parquet support" OFF)
@@ -251,7 +255,9 @@ endif()
 
 include_directories(SYSTEM ${FOLLY_INCLUDE_DIRS})
 
-find_package(Protobuf 3.0.0 REQUIRED)
+if(NOT ${VELOX_BUILD_MINIMAL})
+  find_package(Protobuf 3.0.0 REQUIRED)
+endif()
 
 # GCC needs to link a library to enable std::filesystem.
 if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
