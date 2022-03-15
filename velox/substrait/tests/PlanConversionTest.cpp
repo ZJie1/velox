@@ -172,7 +172,7 @@ class PlanConversionTest : public virtual HiveConnectorTestBase,
       google::protobuf::util::JsonStringToMessage(subData, &subPlan);
 
       auto planConverter = std::make_shared<
-          facebook::velox::substrait::SubstraitVeloxPlanConverter>();
+          facebook::velox::substrait::SubstraitToVeloxPlanConvertor>();
       // Convert to Velox PlanNode.
       auto planNode = planConverter->toVeloxPlan(subPlan);
 
