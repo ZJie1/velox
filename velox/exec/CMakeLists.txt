@@ -57,7 +57,6 @@ add_library(
   SubstraitVeloxExprConvertor.cpp
   SubstraitVeloxPlanConvertor.cpp)
 
-
 target_link_libraries(
   velox_exec
   velox_core

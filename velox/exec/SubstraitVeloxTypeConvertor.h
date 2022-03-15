@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 #pragma once
-#include "substrait/algebra.pb.h"
-#include "substrait/type.pb.h"
+#include "velox/substrait/proto/substrait/algebra.pb.h"
+#include "velox/substrait/proto/substrait/type.pb.h"
 
 #include "core/PlanNode.h"
 

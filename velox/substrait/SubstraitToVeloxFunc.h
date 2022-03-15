@@ -17,17 +17,7 @@
 
 #include "velox/substrait/proto/substrait/plan.pb.h"
 
-namespace facebook::velox::substraitconvertor {
-
-class VeloxToSubstraitFuncConvertor {
- public:
-  uint64_t registerSFunction(std::string name);
-
-  // the function mapping get from velox node
-  std::unordered_map<std::string, uint64_t> function_map_;
-  // the function id in the function mapping
-  uint64_t last_function_id = 0;
-};
+namespace facebook::velox::substrait {
 
 class SubstraitToVeloxFuncConvertor {
  public:
@@ -36,4 +26,4 @@ class SubstraitToVeloxFuncConvertor {
   std::string FindFunction(uint64_t id);
 };
 
-} // namespace facebook::velox::substraitconvertor
+} // namespace facebook::velox::substrait

@@ -54,6 +54,9 @@ TypePtr toVeloxType(const std::string& typeName) {
   if (typeKind == TypeKind::VARCHAR) {
     return VARCHAR();
   }
+  if (typeKind ==TypeKind::INTEGER){
+    return INTEGER();
+  }
   VELOX_NYI("Velox type conversion not supported for type {}.", typeName);
 }
 

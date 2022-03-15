@@ -67,9 +67,5 @@ endif()
 
 # substrait converter
 if(${VELOX_ENABLE_SUBSTRAIT})
-<<<<<<< HEAD
-  add_subdirectory(substrait_converter)
-=======
   add_subdirectory(substrait)
->>>>>>> e2d7c6cb8c074831b56dcd131dcb1217ac3838a0
 endif()

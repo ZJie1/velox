@@ -29,96 +29,52 @@
 #include "type/Type.h"
 #include "velox/dwio/dwrf/test/utils/BatchMaker.h"
 
-#include "SubstraitVeloxExprConvertor.h"
+#include "VeloxToSubstraitExpr.h"
 
 using namespace facebook::velox::core;
 
-namespace facebook::velox::substraitconvertor {
+namespace facebook::velox::substrait {
 
 class VeloxToSubstraitPlanConvertor {
  public:
   void veloxToSubstraitIR(
       std::shared_ptr<const PlanNode> vPlan,
-      substrait::Plan& sPlan);
+      ::substrait::Plan& sPlan);
 
  private:
   void veloxToSubstraitIR(
       std::shared_ptr<const PlanNode> vPlanNode,
-      substrait::Rel* sRel);
+      ::substrait::Rel* sRel);
   void transformVFilter(
       std::shared_ptr<const FilterNode> vFilterNode,
-      substrait::FilterRel* sFilterRel);
+      ::substrait::FilterRel* sFilterRel);
 
   void transformVValuesNode(
       std::shared_ptr<const ValuesNode> vValuesNode,
-      substrait::ReadRel* sReadRel);
+      ::substrait::ReadRel* sReadRel);
 
   void transformVProjNode(
       std::shared_ptr<const ProjectNode> vProjNode,
-      substrait::ProjectRel* sProjRel);
+      ::substrait::ProjectRel* sProjRel);
 
   void transformVPartitionedOutputNode(
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode,
-      substrait::DistributeRel* sDistRel);
+      ::substrait::DistributeRel* sDistRel);
 
   void transformVPartitionFunc(
-      substrait::DistributeRel* sDistRel,
+      ::substrait::DistributeRel* sDistRel,
       std::shared_ptr<const PartitionedOutputNode> vPartitionedOutputNode);
 
   void transformVAggregateNode(
       std::shared_ptr<const AggregationNode> vAggNode,
-      substrait::AggregateRel* sAggRel);
+      ::substrait::AggregateRel* sAggRel);
 
   void transformVOrderBy(
       std::shared_ptr<const OrderByNode> vOrderbyNode,
-      substrait::SortRel* sSortRel);
+      ::substrait::SortRel* sSortRel);
 
   VeloxToSubstraitExprConvertor v2SExprConvertor_;
   VeloxToSubstraitTypeConvertor v2STypeConvertor_;
   VeloxToSubstraitFuncConvertor v2SFuncConvertor_;
 };
-
-class SubstraitToVeloxPlanConvertor {
- public:
-  std::shared_ptr<const PlanNode> substraitIRToVelox(
-      const substrait::Plan& sPlan);
-
- private:
-  std::shared_ptr<const PlanNode> substraitIRToVelox(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::shared_ptr<FilterNode> transformSFilter(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::shared_ptr<PartitionedOutputNode> transformSDistribute(
-      const substrait::Plan& sPlan,
-      int depth);
-
-  std::shared_ptr<PlanNode> transformSRead(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::shared_ptr<ProjectNode> transformSProject(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::shared_ptr<AggregationNode> transformSAggregate(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::shared_ptr<OrderByNode> transformSSort(
-      const substrait::Rel& sRel,
-      int depth);
-
-  std::unique_ptr<velox::memory::ScopedMemoryPool> scopedPool_ =
-      velox::memory::getDefaultScopedMemoryPool();
-  velox::memory::MemoryPool* pool_;
-
-  SubstraitToVeloxFuncConvertor s2VFuncConvertor_;
-  SubstraitToVeloxExprConvertor s2VExprConvertor_;
-  SubstraitToVeloxTypeConvertor s2VTypeConvertor_;
-};
-
-} // namespace facebook::velox::substraitconvertor
+} // namespace facebook::velox::substrait
