@@ -14,38 +14,16 @@
  * limitations under the License.
  */
 
-#include "SubstraitVeloxFuncConvertor.h"
+#include "SubstraitToVeloxFunc.h"
 
 #include "GlobalCommonVariable.h"
 
-namespace facebook::velox::substraitconvertor {
-
-uint64_t VeloxToSubstraitFuncConvertor::registerSFunction(std::string name) {
-  GlobalCommonVarSingleton& sGlobSingleton =
-      GlobalCommonVarSingleton::getInstance();
-  substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
-  if (function_map_.find(name) == function_map_.end()) {
-    auto function_id = last_function_id++;
-    auto sFun = sPlanSingleton->add_extensions()->mutable_extension_function();
-    sFun->set_function_anchor(function_id);
-    sFun->set_name(name);
-    sFun->set_extension_uri_reference(44);
-    /*   auto sFun = sPlanSingleton->add_mappings()->mutable_function_mapping();
-        sFun->mutable_extension_id()->set_id(42);
-        sFun->mutable_function_id()->set_id(function_id);
-        sFun->set_index(function_id);
-        sFun->set_name(name);*/
-
-    function_map_[name] = function_id;
-  }
-  sGlobSingleton.setSPlan(sPlanSingleton);
-  return function_map_[name];
-}
+namespace facebook::velox::substrait {
 
 void SubstraitToVeloxFuncConvertor::initFunctionMap() {
   GlobalCommonVarSingleton& sGlobSingleton =
       GlobalCommonVarSingleton::getInstance();
-  substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
+  ::substrait::Plan* sPlanSingleton = sGlobSingleton.getSPlan();
   std::unordered_map<uint64_t, std::string> funMapSingleton =
       sGlobSingleton.getFunctionsMap();
   for (auto& sMap : sPlanSingleton->extensions()) {
@@ -70,4 +48,4 @@ std::string SubstraitToVeloxFuncConvertor::FindFunction(uint64_t id) {
   return funMapSingleton[id];
 }
 
-} // namespace facebook::velox::substraitconvertor
+} // namespace facebook::velox::substrait

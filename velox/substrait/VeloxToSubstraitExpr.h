@@ -15,45 +15,31 @@
  */
 #pragma once
 
-#include "substrait/algebra.pb.h"
+#include "velox/substrait/proto/substrait/algebra.pb.h"
 
 #include "core/PlanNode.h"
 
-#include "SubstraitVeloxFuncConvertor.h"
-#include "SubstraitVeloxTypeConvertor.h"
+#include "VeloxToSubstraitFunc.h"
+#include "VeloxToSubstraitType.h"
 
 using namespace facebook::velox::core;
 
-namespace facebook::velox::substraitconvertor {
+namespace facebook::velox::substrait {
 
 class VeloxToSubstraitExprConvertor {
  public:
   void transformVExpr(
-      substrait::Expression* sExpr,
+      ::substrait::Expression* sExpr,
       const std::shared_ptr<const ITypedExpr>& vExpr,
       RowTypePtr vPreNodeOutPut);
 
   void transformVConstantExpr(
       const velox::variant& vConstExpr,
-      substrait::Expression_Literal* sLiteralExpr);
+      ::substrait::Expression_Literal* sLiteralExpr);
 
  private:
   VeloxToSubstraitTypeConvertor v2STypeConvertor_;
   VeloxToSubstraitFuncConvertor v2SFuncConvertor_;
 };
 
-class SubstraitToVeloxExprConvertor {
- public:
-  std::shared_ptr<const ITypedExpr> transformSExpr(
-      const substrait::Expression& sExpr,
-      RowTypePtr vPreNodeOutPut);
-
-  std::shared_ptr<const ITypedExpr> transformSLiteralExpr(
-      const substrait::Expression_Literal& sLiteralExpr);
-
- private:
-  SubstraitToVeloxTypeConvertor s2VTypeConvertor_;
-  SubstraitToVeloxFuncConvertor s2VFuncConvertor_;
-};
-
-} // namespace facebook::velox::substraitconvertor
+} // namespace facebook::velox::substrait

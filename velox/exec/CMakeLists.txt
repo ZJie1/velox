@@ -50,13 +50,7 @@ add_library(
   Unnest.cpp
   Values.cpp
   VectorHasher.cpp
-  AssignUniqueId.cpp
-  SubstraitVeloxTypeConvertor.cpp
-  GlobalCommonVariable.cpp
-  SubstraitVeloxFuncConvertor.cpp
-  SubstraitVeloxExprConvertor.cpp
-  SubstraitVeloxPlanConvertor.cpp)
-
+  AssignUniqueId.cpp)
 
 target_link_libraries(
   velox_exec

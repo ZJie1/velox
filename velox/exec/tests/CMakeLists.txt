@@ -44,9 +44,7 @@ add_executable(
   FunctionSignatureBuilderTest.cpp
   SimpleFunctionResolutionTest.cpp
   UnnestTest.cpp
-  AssignUniqueIdTest.cpp
-  SubstraitAggregationTest.cpp
-  SubstraitVeloxPlanConverterTest.cpp)
+  AssignUniqueIdTest.cpp)
 
 add_test(
   NAME velox_exec_test

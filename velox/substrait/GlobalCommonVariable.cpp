@@ -16,17 +16,17 @@
 
 #include "GlobalCommonVariable.h"
 
-namespace facebook::velox {
+namespace facebook::velox::substrait {
 
 GlobalCommonVarSingleton& GlobalCommonVarSingleton::getInstance() {
   static GlobalCommonVarSingleton instance;
   return instance;
 }
 
-substrait::Plan* GlobalCommonVarSingleton::getSPlan() const {
+::substrait::Plan* GlobalCommonVarSingleton::getSPlan() const {
   return sPlan_;
 }
-void GlobalCommonVarSingleton::setSPlan(substrait::Plan* s_plan) {
+void GlobalCommonVarSingleton::setSPlan(::substrait::Plan* s_plan) {
   sPlan_ = s_plan;
 }
 const std::unordered_map<uint64_t, std::string>&
@@ -37,8 +37,4 @@ void GlobalCommonVarSingleton::setFunctionsMap(
     const std::unordered_map<uint64_t, std::string>& functions_map) {
   functions_map_ = functions_map;
 }
-// Substrait is ordinal based field reference implementation. sGlobalMapping
-// is used to tracked the mapping from ID to field reference.
-substrait::NamedStruct* sGlobalMapping_ =
-    new substrait::NamedStruct();
-} // namespace facebook::velox
+} // namespace facebook::velox::substrait
