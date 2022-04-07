@@ -19,8 +19,7 @@
 
 namespace facebook::velox::substrait {
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
     const ::substrait::AggregateRel& sAgg) {
   std::shared_ptr<const core::PlanNode> childNode;
   if (sAgg.has_input()) {
@@ -171,8 +170,7 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(
   }
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
     const ::substrait::ProjectRel& sProject) {
   std::shared_ptr<const core::PlanNode> childNode;
   if (sProject.has_input()) {
@@ -203,8 +201,7 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(
   return projectNode;
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
     const ::substrait::FilterRel& sFilter) {
   // TODO: Currently Filter is skipped because Filter is Pushdowned to
   // TableScan.
@@ -217,8 +214,7 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(
   return childNode;
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
     const ::substrait::ReadRel& sRead,
     u_int32_t& index,
     std::vector<std::string>& paths,
@@ -288,8 +284,8 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(
   return tableScanNode;
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::Rel& sRel) {
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
+    const ::substrait::Rel& sRel) {
   if (sRel.has_aggregate()) {
     return toVeloxPlan(sRel.aggregate());
   }
@@ -305,8 +301,8 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::Rel& sRel) {
   VELOX_NYI("Substrait conversion not supported for Rel.");
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::RelRoot& sRoot) {
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
+    const ::substrait::RelRoot& sRoot) {
   // TODO: Use the names as the output names for the whole computing.
   const auto& sNames = sRoot.names();
   if (sRoot.has_input()) {
@@ -316,8 +312,8 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::RelRoot& sRoot) {
   VELOX_FAIL("Input is expected in RelRoot.");
 }
 
-std::shared_ptr<const core::PlanNode>
-SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::Plan& sPlan) {
+std::shared_ptr<const core::PlanNode> SubstraitVeloxPlanConverter::toVeloxPlan(
+    const ::substrait::Plan& sPlan) {
   // Construct the function map based on the Substrait representation.
   for (const auto& sExtension : sPlan.extensions()) {
     if (!sExtension.has_extension_function()) {
@@ -331,7 +327,7 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::Plan& sPlan) {
 
   // Construct the expression converter.
   exprConverter_ =
-      std::make_shared<SubstraitToVeloxExprConvertor>(subParser_, functionMap_);
+      std::make_shared<SubstraitVeloxExprConverter>(subParser_, functionMap_);
 
   // In fact, only one RelRoot or Rel is expected here.
   for (const auto& sRel : sPlan.relations()) {
@@ -345,7 +341,7 @@ SubstraitToVeloxPlanConvertor::toVeloxPlan(const ::substrait::Plan& sPlan) {
   VELOX_FAIL("RelRoot or Rel is expected in Plan.");
 }
 
-std::string SubstraitToVeloxPlanConvertor::nextPlanNodeId() {
+std::string SubstraitVeloxPlanConverter::nextPlanNodeId() {
   auto id = fmt::format("{}", planNodeId_);
   planNodeId_++;
   return id;
@@ -401,7 +397,7 @@ class FilterInfo {
   bool isInitialized_ = false;
 };
 
-connector::hive::SubfieldFilters SubstraitToVeloxPlanConvertor::toVeloxFilter(
+connector::hive::SubfieldFilters SubstraitVeloxPlanConverter::toVeloxFilter(
     const std::vector<std::string>& inputNameList,
     const std::vector<TypePtr>& inputTypeList,
     const ::substrait::Expression& sFilter) {
@@ -495,7 +491,7 @@ connector::hive::SubfieldFilters SubstraitToVeloxPlanConvertor::toVeloxFilter(
   return filters;
 }
 
-void SubstraitToVeloxPlanConvertor::flattenConditions(
+void SubstraitVeloxPlanConverter::flattenConditions(
     const ::substrait::Expression& sFilter,
     std::vector<::substrait::Expression_ScalarFunction>& scalarFunctions) {
   auto typeCase = sFilter.rex_type_case();

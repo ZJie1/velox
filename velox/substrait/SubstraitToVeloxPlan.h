@@ -22,7 +22,7 @@
 namespace facebook::velox::substrait {
 
 /// This class is used to convert the Substrait plan into Velox plan.
-class SubstraitToVeloxPlanConvertor {
+class SubstraitVeloxPlanConverter {
  public:
   /// Used to convert Substrait AggregateRel into Velox PlanNode.
   std::shared_ptr<const core::PlanNode> toVeloxPlan(
@@ -106,7 +106,7 @@ class SubstraitToVeloxPlanConvertor {
 
   /// The Expression converter used to convert Substrait representations into
   /// Velox expressions.
-  std::shared_ptr<SubstraitToVeloxExprConvertor> exprConverter_;
+  std::shared_ptr<SubstraitVeloxExprConverter> exprConverter_;
 
   /// A function returning current function id and adding the plan node id by
   /// one once called.

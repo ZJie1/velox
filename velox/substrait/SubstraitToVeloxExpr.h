@@ -23,12 +23,12 @@ namespace facebook::velox::substrait {
 
 /// This class is used to convert Substrait representations to Velox
 /// expressions.
-class SubstraitToVeloxExprConvertor {
+class SubstraitVeloxExprConverter {
  public:
   /// subParser: A Substrait parser used to convert Substrait representations
   /// into recognizable representations. functionMap: A pre-constructed map
   /// storing the relations between the function id and the function name.
-  SubstraitToVeloxExprConvertor(
+  SubstraitVeloxExprConverter(
       const std::shared_ptr<SubstraitParser>& subParser,
       const std::unordered_map<uint64_t, std::string>& functionMap)
       : subParser_(subParser), functionMap_(functionMap) {}
