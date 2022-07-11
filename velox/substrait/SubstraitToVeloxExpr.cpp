@@ -54,18 +54,18 @@ std::shared_ptr<const core::ITypedExpr>
 SubstraitVeloxExprConverter::toVeloxExpr(
     const ::substrait::Expression::ScalarFunction& substraitFunc,
     const RowTypePtr& inputType) {
-  std::vector<std::shared_ptr<const core::ITypedExpr>> params;
+  std::vector<core::TypedExprPtr> params;
   params.reserve(substraitFunc.args().size());
   for (const auto& sArg : substraitFunc.args()) {
     params.emplace_back(toVeloxExpr(sArg, inputType));
   }
   const auto& veloxFunction = substraitParser_.findVeloxFunction(
       functionMap_, substraitFunc.function_reference());
-  const auto& veloxType = toVeloxType(
+  std::string typeName = substraitParser_.getNameBeforeColon(
       substraitParser_.parseType(substraitFunc.output_type())->type);
 
   return std::make_shared<const core::CallTypedExpr>(
-      veloxType, std::move(params), veloxFunction);
+      toVeloxType(typeName), std::move(params), veloxFunction);
 }
 
 std::shared_ptr<const core::ConstantTypedExpr>

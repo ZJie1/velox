@@ -27,4 +27,8 @@ int64_t bytesOfType(const TypePtr& type);
 /// Return the Velox type according to the typename.
 TypePtr toVeloxType(const std::string& typeName);
 
+/// Extracts argument types from specified compound name.
+void getTypesFromCompoundName(
+    const std::string& compoundName,
+    std::vector<std::string>& types);
 } // namespace facebook::velox::substrait

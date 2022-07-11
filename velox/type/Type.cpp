@@ -64,7 +64,8 @@ const std::unordered_map<std::string, TypeKind>& getTypeStringMap() {
       {"FUNCTION", TypeKind::FUNCTION},
       {"UNKNOWN", TypeKind::UNKNOWN},
       {"OPAQUE", TypeKind::OPAQUE},
-      {"INVALID", TypeKind::INVALID}};
+      {"INVALID", TypeKind::INVALID},
+      {"STRUCT", TypeKind::ROW}};
   return kTypeStringMap;
 }
 

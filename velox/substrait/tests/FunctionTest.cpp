@@ -21,9 +21,10 @@
 #include "velox/dwio/common/tests/utils/DataFiles.h"
 
 #include "velox/substrait/SubstraitToVeloxPlan.h"
-
+#include "velox/substrait/TypeUtils.h"
 using namespace facebook::velox;
 using namespace facebook::velox::test;
+using namespace facebook::velox::substrait;
 namespace vestrait = facebook::velox::substrait;
 
 class FunctionTest : public ::testing::Test {
@@ -66,34 +67,34 @@ TEST_F(FunctionTest, getIdxFromNodeName) {
   ASSERT_EQ(index, 0);
 }
 
-TEST_F(FunctionTest, getFunctionName) {
+TEST_F(FunctionTest, getNameBeforeColon) {
   std::string functionSpec = "lte:fp64_fp64";
-  std::string funcName = substraitParser_->getFunctionName(functionSpec);
+  std::string funcName = substraitParser_->getNameBeforeColon(functionSpec);
   ASSERT_EQ(funcName, "lte");
 
   functionSpec = "lte:";
-  funcName = substraitParser_->getFunctionName(functionSpec);
+  funcName = substraitParser_->getNameBeforeColon(functionSpec);
   ASSERT_EQ(funcName, "lte");
 
   functionSpec = "lte";
-  funcName = substraitParser_->getFunctionName(functionSpec);
+  funcName = substraitParser_->getNameBeforeColon(functionSpec);
   ASSERT_EQ(funcName, "lte");
 }
 
-TEST_F(FunctionTest, getFunctionTypes) {
-  std::string functionSpec = "lte:fp64_fp64";
+TEST_F(FunctionTest, getTypesFromCompoundName) {
+  std::string typeSpec = "lte:fp64_fp64";
   std::vector<std::string> types;
-  substraitParser_->getFunctionTypes(functionSpec, types);
+  getTypesFromCompoundName(typeSpec, types);
   ASSERT_EQ(types.size(), 2);
   ASSERT_EQ(types[0], "fp64");
   ASSERT_EQ(types[1], "fp64");
 
-  functionSpec = "lte:";
-  substraitParser_->getFunctionTypes(functionSpec, types);
+  typeSpec = "lte:";
+  getTypesFromCompoundName(typeSpec, types);
   ASSERT_EQ(types.size(), 0);
 
-  functionSpec = "lte";
-  substraitParser_->getFunctionTypes(functionSpec, types);
+  typeSpec = "lte";
+  getTypesFromCompoundName(typeSpec, types);
   ASSERT_EQ(types.size(), 0);
 }
 
@@ -129,7 +130,7 @@ TEST_F(FunctionTest, constructFunctionMap) {
   ASSERT_EQ(function, "sum:opt_fp64");
 
   function = planConverter_->findFunction(7);
-  ASSERT_EQ(function, "avg:opt_fp64");
+  ASSERT_EQ(function, "count:opt_fp64");
 
   function = planConverter_->findFunction(8);
   ASSERT_EQ(function, "count:opt_i32");

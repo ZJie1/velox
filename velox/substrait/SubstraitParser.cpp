@@ -46,13 +46,18 @@ std::shared_ptr<SubstraitParser::SubstraitType> SubstraitParser::parseType(
       break;
     }
     case ::substrait::Type::KindCase::kStruct: {
-      // TODO: Support for Struct is not fully added.
-      typeName = "STRUCT";
-      const auto& substraitStruct = substraitType.struct_();
-      const auto& substraitTypes = substraitStruct.types();
-      for (const auto& type : substraitTypes) {
-        parseType(type);
+      // The type name of struct is in the format of:
+      // STRUCT:type0_type1...typen.
+      typeName = "STRUCT:";
+      const auto& sStruct = substraitType.struct_();
+      const auto& substraitTypes = sStruct.types();
+      for (int i = 0; i < substraitTypes.size(); i++) {
+        if (i > 0) {
+          typeName += "_";
+        }
+        typeName += parseType(substraitTypes[i])->type;
       }
+      nullability = substraitType.struct_().nullability();
       break;
     }
     case ::substrait::Type::KindCase::kString: {
@@ -167,46 +172,21 @@ const std::string& SubstraitParser::findFunctionSpec(
   return map[id];
 }
 
-std::string SubstraitParser::getFunctionName(
-    const std::string& functionSpec) const {
+std::string SubstraitParser::getNameBeforeColon(
+    const std::string& compoundName) const {
   // Get the position of ":" in the function name.
-  std::size_t pos = functionSpec.find(":");
+  std::size_t pos = compoundName.find(":");
   if (pos == std::string::npos) {
-    return functionSpec;
+    return compoundName;
   }
-  return functionSpec.substr(0, pos);
-}
-
-void SubstraitParser::getFunctionTypes(
-    const std::string& functionSpec,
-    std::vector<std::string>& types) const {
-  types.clear();
-  // Get the position of ":" in the function name.
-  std::size_t pos = functionSpec.find(":");
-  // Get the parameter types.
-  std::string funcTypes;
-  if (pos == std::string::npos) {
-    return;
-  } else {
-    if (pos == functionSpec.size() - 1) {
-      return;
-    }
-    funcTypes = functionSpec.substr(pos + 1);
-  }
-  // Split the types with delimiter.
-  std::string delimiter = "_";
-  while ((pos = funcTypes.find(delimiter)) != std::string::npos) {
-    types.emplace_back(funcTypes.substr(0, pos));
-    funcTypes.erase(0, pos + delimiter.length());
-  }
-  types.emplace_back(funcTypes);
+  return compoundName.substr(0, pos);
 }
 
 std::string SubstraitParser::findVeloxFunction(
     const std::unordered_map<uint64_t, std::string>& functionMap,
     uint64_t id) const {
   std::string funcSpec = findFunctionSpec(functionMap, id);
-  std::string funcName = getFunctionName(funcSpec);
+  std::string funcName = getNameBeforeColon(funcSpec);
   return mapToVeloxFunction(funcName);
 }
 

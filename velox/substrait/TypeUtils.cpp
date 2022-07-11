@@ -43,6 +43,31 @@ int64_t bytesOfType(const TypePtr& type) {
   }
 }
 
+void getTypesFromCompoundName(
+    const std::string& compoundName,
+    std::vector<std::string>& types) {
+  types.clear();
+  // Get the position of ":" in the compoundName.
+  std::size_t pos = compoundName.find(":");
+  // Get the parameter types.
+  std::string funcTypes;
+  if (pos == std::string::npos) {
+    return;
+  } else {
+    if (pos == compoundName.size() - 1) {
+      return;
+    }
+    funcTypes = compoundName.substr(pos + 1);
+  }
+  // Split the types with delimiter.
+  std::string delimiter = "_";
+  while ((pos = funcTypes.find(delimiter)) != std::string::npos) {
+    types.emplace_back(funcTypes.substr(0, pos));
+    funcTypes.erase(0, pos + delimiter.length());
+  }
+  types.emplace_back(funcTypes);
+}
+
 TypePtr toVeloxType(const std::string& typeName) {
   auto typeKind = mapNameToTypeKind(typeName);
   switch (typeKind) {
@@ -58,6 +83,21 @@ TypePtr toVeloxType(const std::string& typeName) {
       return BIGINT();
     case TypeKind::UNKNOWN:
       return UNKNOWN();
+    case TypeKind::ROW: {
+      std::vector<std::string> structTypeNames;
+      getTypesFromCompoundName(typeName, structTypeNames);
+      VELOX_CHECK(
+          structTypeNames.size() > 0, "At lease one type name is expected.");
+      // Preparation for the conversion from struct types to RowType.
+      std::vector<TypePtr> rowTypes;
+      std::vector<std::string> names;
+      for (int idx = 0; idx < structTypeNames.size(); idx++) {
+        std::string substraitTypeName = structTypeNames[idx];
+        names.emplace_back("col_" + std::to_string(idx));
+        rowTypes.emplace_back(std::move(toVeloxType(substraitTypeName)));
+      }
+      return ROW(std::move(names), std::move(rowTypes));
+    }
     default:
       VELOX_NYI("Velox type conversion not supported for type {}.", typeName);
   }

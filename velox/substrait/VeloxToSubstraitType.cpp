@@ -144,6 +144,22 @@ const ::substrait::Type& VeloxToSubstraitTypeConvertor::toSubstraitType(
 
       break;
     }
+    case velox::TypeKind::ROW: {
+      ::substrait::Type_Struct* substraitStruct =
+          google::protobuf::Arena::CreateMessage<::substrait::Type_Struct>(
+              &arena);
+      std::vector<TypePtr> rowChildren = type->asRow().children();
+      for (size_t i = 0; i < type->asRow().size(); ++i) {
+        substraitStruct->set_nullability(
+            ::substrait::Type_Nullability_NULLABILITY_NULLABLE);
+        substraitStruct->add_types()->MergeFrom(
+            toSubstraitType(arena, type->asRow().childAt(i)));
+      }
+      substraitStruct->set_nullability(
+          ::substrait::Type_Nullability_NULLABILITY_NULLABLE);
+      substraitType->set_allocated_struct_(substraitStruct);
+      break;
+    }
     case velox::TypeKind::UNKNOWN: {
       auto substraitUserDefined =
           google::protobuf::Arena::CreateMessage<::substrait::Type_UserDefined>(
