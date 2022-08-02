@@ -318,6 +318,7 @@ void VeloxToSubstraitPlanConvertor::constructFunctionMap() {
   functionMap_["sum"] = 5;
   functionMap_["mod"] = 6;
   functionMap_["eq"] = 7;
+  functionMap_["row_constructor"] = 8;
 }
 
 ::substrait::Plan& VeloxToSubstraitPlanConvertor::addExtensionFunc(
@@ -377,6 +378,12 @@ void VeloxToSubstraitPlanConvertor::constructFunctionMap() {
   extensionFunction->set_extension_uri_reference(0);
   extensionFunction->set_function_anchor(7);
   extensionFunction->set_name("equal:i64_i64");
+
+  extensionFunction =
+      substraitPlan->add_extensions()->mutable_extension_function();
+  extensionFunction->set_extension_uri_reference(0);
+  extensionFunction->set_function_anchor(8);
+  extensionFunction->set_name("row_constructor:i64_i32");
 
   return *substraitPlan;
 }

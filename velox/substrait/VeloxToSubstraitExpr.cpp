@@ -120,7 +120,19 @@ VeloxToSubstraitExprConvertor::toSubstraitExpr(
   ::substrait::Expression_ReferenceSegment_StructField* directStruct =
       substraitFieldExpr->mutable_direct_reference()->mutable_struct_field();
 
-  directStruct->set_field(inputType->getChildIdx(exprName));
+  /// For the case like, c1_c2:ROW[ROW[c1:BIGINT,c2:INTEGER]].
+  auto extractChild = inputType->childAt(0);
+  if (extractChild->isRow()) {
+    auto extractRow = asRowType(inputType->children()[0]);
+    for (int idx = 0; idx < extractRow->size(); idx++) {
+      if (extractRow->nameOf(idx) == exprName) {
+        directStruct->set_field(idx);
+        break;
+      }
+    }
+  } else {
+    directStruct->set_field(inputType->getChildIdx(exprName));
+  }
 
   return *substraitFieldExpr;
 }

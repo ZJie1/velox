@@ -209,6 +209,40 @@ TEST_F(VeloxSubstraitRoundTripPlanConverterTest, sumMask) {
       "FROM tmp");
 }
 
+TEST_F(VeloxSubstraitRoundTripPlanConverterTest, row_constructor) {
+  RowVectorPtr vectors = makeRowVector(
+      {makeFlatVector<double_t>({0.905791934145, 0.968867771124}),
+       makeFlatVector<int64_t>({2499109626526694126, 2342493223442167775}),
+       makeFlatVector<int32_t>({581869302, -133711905})});
+  createDuckDbTable({vectors});
+
+  auto plan = PlanBuilder()
+                  .values({vectors})
+                  .project({"row_constructor(c1, c2) AS c1_c2"})
+                  .filter("c1_c2.c1 % 10 = 5")
+                  .project({"c1_c2.c1", "c1_c2.c2"})
+                  .planNode();
+
+  assertPlanConversion(plan, "SELECT c1, c2 FROM tmp WHERE c1 % 10 = 5");
+}
+
+TEST_F(VeloxSubstraitRoundTripPlanConverterTest, projectAs) {
+  RowVectorPtr vectors = makeRowVector(
+      {makeFlatVector<double_t>({0.905791934145, 0.968867771124}),
+       makeFlatVector<int64_t>({2499109626526694126, 2342493223442167775}),
+       makeFlatVector<int32_t>({581869302, -133711905})});
+  createDuckDbTable({vectors});
+
+  auto plan = PlanBuilder()
+                  .values({vectors})
+                  .filter("c0 < 0.5")
+                  .project({"c1 * c2 as revenue"})
+                  .partialAggregation({}, {"sum(revenue)"})
+                  .planNode();
+  assertPlanConversion(
+      plan, "SELECT sum(c1 * c2) as revenue FROM tmp WHERE c0 < 0.5");
+}
+
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   folly::init(&argc, &argv, false);
