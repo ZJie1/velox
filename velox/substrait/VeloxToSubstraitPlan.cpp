@@ -15,6 +15,8 @@
  */
 
 #include "velox/substrait/VeloxToSubstraitPlan.h"
+#include "VeloxToSubstraitMappings.h"
+#include "velox/substrait/TypeUtils.h"
 
 namespace facebook::velox::substrait {
 
@@ -42,6 +44,47 @@ namespace {
 }
 
 } // namespace
+
+VeloxToSubstraitPlanConvertor::VeloxToSubstraitPlanConvertor()
+    : VeloxToSubstraitPlanConvertor(
+          SubstraitExtension::loadExtension(),
+          VeloxToSubstraitFunctionMappings::make()) {}
+
+VeloxToSubstraitPlanConvertor::VeloxToSubstraitPlanConvertor(
+    const SubstraitExtensionPtr& substraitExtension,
+    const SubstraitFunctionMappingsPtr& functionMappings) {
+  // Construct the extension collector
+  functionCollector_ = std::make_shared<SubstraitFunctionCollector>();
+
+  auto substraitTypeLookup =
+      std::make_shared<SubstraitTypeLookup>(substraitExtension->types);
+  typeConvertor_ = std::make_shared<VeloxToSubstraitTypeConvertor>(
+      functionCollector_, substraitTypeLookup);
+  // Construct the scalar function lookup
+  auto scalarFunctionLookup =
+      std::make_shared<const SubstraitScalarFunctionLookup>(
+          substraitExtension, functionMappings);
+
+  // Construct the if/Then call converter
+  auto ifThenCallConverter =
+      std::make_shared<VeloxToSubstraitIfThenConverter>();
+  // Construct the scalar function converter.
+  auto scalaFunctionConverter =
+      std::make_shared<VeloxToSubstraitScalarFunctionConverter>(
+          scalarFunctionLookup, functionCollector_, typeConvertor_);
+
+  std::vector<VeloxToSubstraitCallConverterPtr> callConvertors;
+  callConvertors.push_back(ifThenCallConverter);
+  callConvertors.push_back(scalaFunctionConverter);
+
+  // Construct the expression converter.
+  exprConvertor_ = std::make_shared<VeloxToSubstraitExprConvertor>(
+      typeConvertor_, callConvertors);
+
+  // Construct the aggregate function lookup
+  aggregateFunctionLookup_ = std::make_shared<SubstraitAggregateFunctionLookup>(
+      substraitExtension, functionMappings);
+}
 
 ::substrait::Plan& VeloxToSubstraitPlanConvertor::toSubstrait(
     google::protobuf::Arena& arena,
@@ -208,8 +251,6 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
     // Add outputMapping for each expression.
     projRelEmit->add_output_mapping(inputTypeSize + i);
   }
-
-  return;
 }
 
 void VeloxToSubstraitPlanConvertor::toSubstrait(
