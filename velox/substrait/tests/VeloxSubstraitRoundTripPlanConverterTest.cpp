@@ -279,6 +279,13 @@ TEST_F(VeloxSubstraitRoundTripPlanConverterTest, caseWhen) {
       "SELECT case when c0=1 then c1 when c0=2 then c2  end as x FROM tmp");
 }
 
+TEST_F(VeloxSubstraitRoundTripPlanConverterTest, cast) {
+  auto vectors = makeVectors(3, 4, 2);
+  createDuckDbTable(vectors);
+  auto plan = PlanBuilder().values(vectors).project({"true"}).planNode();
+  assertPlanConversion(plan, "SELECT true  FROM tmp");
+}
+
 TEST_F(VeloxSubstraitRoundTripPlanConverterTest, ifThen) {
   auto vectors = makeVectors(3, 4, 2);
   createDuckDbTable(vectors);
@@ -289,6 +296,14 @@ TEST_F(VeloxSubstraitRoundTripPlanConverterTest, ifThen) {
                   .planNode();
   assertPlanConversion(
       plan, "SELECT if (c0 = 1, c0 + 1, c1 + 2) as x FROM tmp");
+}
+
+TEST_F(VeloxSubstraitRoundTripPlanConverterTest, coalesce) {
+  auto vectors = makeVectors(3, 4, 2);
+  createDuckDbTable(vectors);
+  auto plan =
+      PlanBuilder().values(vectors).project({"coalesce(c0,c1) "}).planNode();
+  assertPlanConversion(plan, "SELECT coalesce(c0,c1)   FROM tmp");
 }
 
 int main(int argc, char** argv) {

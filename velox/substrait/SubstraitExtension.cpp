@@ -257,6 +257,7 @@ std::shared_ptr<SubstraitExtension> SubstraitExtension::loadExtension() {
       "functions_logarithmic.yaml",
       "functions_rounding.yaml",
       "functions_string.yaml",
+      "functions_set.yaml",
       "unknown.yaml",
   };
   const auto& extensionRootPath = getSubstraitExtensionAbsolutePath();
