@@ -15,8 +15,7 @@
  */
 
 #include "velox/substrait/VeloxToSubstraitPlan.h"
-#include "VeloxToSubstraitMappings.h"
-#include "velox/substrait/TypeUtils.h"
+#include "velox/substrait/JoinUtils.h"
 
 namespace facebook::velox::substrait {
 
@@ -148,6 +147,14 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
           std::dynamic_pointer_cast<const core::AggregationNode>(planNode)) {
     ::substrait::AggregateRel* aggregateRel = rel->mutable_aggregate();
     toSubstrait(arena, aggregationNode, aggregateRel);
+    return;
+  }
+  if (auto joinNode =
+          std::dynamic_pointer_cast<const core::HashJoinNode>(planNode)) {
+    auto hashJoinRel = rel->mutable_join();
+    toSubstrait(arena, joinNode, hashJoinRel);
+    hashJoinRel->set_type(join::toProto(joinNode->joinType()));
+
     return;
   }
 }

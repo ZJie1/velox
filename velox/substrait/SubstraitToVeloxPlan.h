@@ -18,6 +18,7 @@
 
 #include "velox/connectors/hive/HiveConnector.h"
 #include "velox/core/PlanNode.h"
+#include "velox/substrait/JoinUtils.h"
 #include "velox/substrait/SubstraitToVeloxExpr.h"
 
 namespace facebook::velox::substrait {
@@ -72,6 +73,11 @@ class SubstraitVeloxPlanConverter {
   /// Convert Substrait RelRoot into Velox PlanNode.
   core::PlanNodePtr toVeloxPlan(const ::substrait::RelRoot& root);
 
+  /// Convert Substrait JoinRel into Velox PlanNode.
+  core::PlanNodePtr toVeloxPlan(
+      const ::substrait::JoinRel& sJoin,
+      memory::MemoryPool* pool);
+
   /// Convert Substrait Plan into Velox PlanNode.
   core::PlanNodePtr toVeloxPlan(const ::substrait::Plan& substraitPlan);
 
@@ -119,6 +125,16 @@ class SubstraitVeloxPlanConverter {
   void flattenConditions(
       const ::substrait::Expression& substraitFilter,
       std::vector<::substrait::Expression_ScalarFunction>& scalarFunctions);
+
+  /// Extract join keys from joinExpression.
+  /// joinExpression is a boolean condition that describes whether each record
+  /// from the left set �match� the record from the right set. The condition
+  /// must only include the following operations: AND, ==, field references.
+  /// Field references correspond to the direct output order of the data.
+  void extractJoinKeys(
+      const ::substrait::Expression& joinExpression,
+      std::vector<const ::substrait::Expression::FieldReference*>& leftExprs,
+      std::vector<const ::substrait::Expression::FieldReference*>& rightExprs);
 
   /// The Substrait parser used to convert Substrait representations into
   /// recognizable representations.
