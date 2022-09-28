@@ -151,10 +151,7 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
   }
   if (auto joinNode =
           std::dynamic_pointer_cast<const core::HashJoinNode>(planNode)) {
-    auto hashJoinRel = rel->mutable_join();
-    toSubstrait(arena, joinNode, hashJoinRel);
-    hashJoinRel->set_type(join::toProto(joinNode->joinType()));
-
+    toSubstraitJoin(arena, joinNode, rel);
     return;
   }
 }
