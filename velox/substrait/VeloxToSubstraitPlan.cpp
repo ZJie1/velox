@@ -44,47 +44,6 @@ namespace {
 
 } // namespace
 
-VeloxToSubstraitPlanConvertor::VeloxToSubstraitPlanConvertor()
-    : VeloxToSubstraitPlanConvertor(
-          SubstraitExtension::loadExtension(),
-          VeloxToSubstraitFunctionMappings::make()) {}
-
-VeloxToSubstraitPlanConvertor::VeloxToSubstraitPlanConvertor(
-    const SubstraitExtensionPtr& substraitExtension,
-    const SubstraitFunctionMappingsPtr& functionMappings) {
-  // Construct the extension collector
-  functionCollector_ = std::make_shared<SubstraitFunctionCollector>();
-
-  auto substraitTypeLookup =
-      std::make_shared<SubstraitTypeLookup>(substraitExtension->types);
-  typeConvertor_ = std::make_shared<VeloxToSubstraitTypeConvertor>(
-      functionCollector_, substraitTypeLookup);
-  // Construct the scalar function lookup
-  auto scalarFunctionLookup =
-      std::make_shared<const SubstraitScalarFunctionLookup>(
-          substraitExtension, functionMappings);
-
-  // Construct the if/Then call converter
-  auto ifThenCallConverter =
-      std::make_shared<VeloxToSubstraitIfThenConverter>();
-  // Construct the scalar function converter.
-  auto scalaFunctionConverter =
-      std::make_shared<VeloxToSubstraitScalarFunctionConverter>(
-          scalarFunctionLookup, functionCollector_, typeConvertor_);
-
-  std::vector<VeloxToSubstraitCallConverterPtr> callConvertors;
-  callConvertors.push_back(ifThenCallConverter);
-  callConvertors.push_back(scalaFunctionConverter);
-
-  // Construct the expression converter.
-  exprConvertor_ = std::make_shared<VeloxToSubstraitExprConvertor>(
-      typeConvertor_, callConvertors);
-
-  // Construct the aggregate function lookup
-  aggregateFunctionLookup_ = std::make_shared<SubstraitAggregateFunctionLookup>(
-      substraitExtension, functionMappings);
-}
-
 ::substrait::Plan& VeloxToSubstraitPlanConvertor::toSubstrait(
     google::protobuf::Arena& arena,
     const core::PlanNodePtr& plan) {
@@ -351,6 +310,89 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
 
   // Direct output.
   aggregateRel->mutable_common()->mutable_direct();
+}
+
+void VeloxToSubstraitPlanConvertor::toSubstraitJoin(
+    google::protobuf::Arena& arena,
+    const std::shared_ptr<const core::HashJoinNode> joinNode,
+    ::substrait::Rel* rel) {
+  const auto& joinSources = joinNode->sources();
+  auto joinOutputRowType =
+      joinSources[0]->outputType()->unionWith(joinSources[1]->outputType());
+
+  if (joinNode->joinType() == core::JoinType::kLeftSemi) {
+    joinOutputRowType = joinSources[0]->outputType();
+  } else if (joinNode->joinType() == core::JoinType::kRightSemi) {
+    joinOutputRowType = joinSources[1]->outputType();
+  }
+  auto joinOutputTypeSize = joinOutputRowType->size();
+
+  // Insert a project rel for outputRowType of HashJoinNode.
+  auto projectRel = rel->mutable_project();
+  auto projectEmitRel = projectRel->mutable_common()->mutable_emit();
+
+  for (auto i = 0; i < joinNode->outputType()->size(); i++) {
+    auto fieldRef = std::make_shared<const core::FieldAccessTypedExpr>(
+        joinNode->outputType()->childAt(i), joinNode->outputType()->nameOf(i));
+    projectRel->add_expressions()->mutable_selection()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(arena, fieldRef, joinOutputRowType));
+    projectEmitRel->add_output_mapping(joinOutputTypeSize + i);
+  }
+
+  auto joinRel = projectRel->mutable_input()->mutable_join();
+
+  // JoinNode has exactly two input nodes.
+  VELOX_USER_CHECK_EQ(
+      2, joinSources.size(), "Join plan node must have exactly two sources.");
+  // Convert the input node.
+  toSubstrait(arena, joinSources[0], joinRel->mutable_left());
+  toSubstrait(arena, joinSources[1], joinRel->mutable_right());
+  // Compose the Velox PlanNode join conditions into one.
+  std::vector<core::TypedExprPtr> joinCondition;
+  int numColumns = joinNode->leftKeys().size();
+  // Compose the join expression
+  for (auto i = 0; i < numColumns; i++) {
+    joinCondition.emplace_back(std::make_shared<core::CallTypedExpr>(
+        BOOLEAN(),
+        std::vector<core::TypedExprPtr>{
+            joinNode->leftKeys().at(i), joinNode->rightKeys().at(i)},
+        "eq"));
+  }
+
+  auto makeConjunction = [](const core::TypedExprPtr& left,
+                            const core::TypedExprPtr& right) {
+    return std::make_shared<const core::CallTypedExpr>(
+        BOOLEAN(), std::vector<core::TypedExprPtr>{left, right}, "and");
+  };
+
+  core::TypedExprPtr joinExpression;
+  if (joinCondition.size() == 1) {
+    joinExpression = joinCondition.at(0);
+  } else {
+    joinExpression = makeConjunction(joinCondition.at(0), joinCondition.at(1));
+    if (joinCondition.size() > 2) {
+      for (auto i = 2; i < joinCondition.size(); i++) {
+        joinExpression = makeConjunction(joinCondition.at(i), joinExpression);
+      }
+    }
+  }
+  joinRel->mutable_expression()->MergeFrom(exprConvertor_->toSubstraitExpr(
+      arena,
+      joinExpression,
+      joinSources[0]->outputType()->unionWith(joinSources[1]->outputType())));
+
+  if (joinNode->filter()) {
+    // Set the join filter.
+    joinRel->mutable_post_join_filter()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(
+            arena,
+            joinNode->filter(),
+            joinSources[0]->outputType()->unionWith(
+                joinSources[1]->outputType())));
+  }
+  joinRel->mutable_common()->mutable_direct();
+
+  joinRel->set_type(join::toProto(joinNode->joinType()));
 }
 
 } // namespace facebook::velox::substrait

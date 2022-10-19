@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-#include <core/Expressions.h>
-#include "velox/core/ITypedExpr.h"
-#include "velox/substrait/SubstraitSignature.h"
 #include "velox/type/Type.h"
 
 namespace facebook::velox::substrait {
@@ -27,5 +24,4 @@ TypePtr toVeloxType(const std::string& typeName);
 std::string_view getNameBeforeDelimiter(
     const std::string& compoundName,
     const std::string& delimiter);
-
 } // namespace facebook::velox::substrait
