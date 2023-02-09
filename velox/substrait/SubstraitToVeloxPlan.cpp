@@ -466,8 +466,8 @@ core::PlanNodePtr SubstraitVeloxPlanConverter::toVeloxPlan(
     splitInfoMap_[planNode->id()] = splitInfo;
     return planNode;
   }
-  if (rel.has_join()) {
-    return toVeloxPlan(rel.join());
+  if (rel.has_hash_join()) {
+    return toVeloxPlan(rel.hash_join());
   }
   if (rel.has_fetch()) {
     return toVeloxPlan(rel.fetch());
@@ -763,21 +763,21 @@ void SubstraitVeloxPlanConverter::extractJoinKeys(
 }
 
 core::PlanNodePtr SubstraitVeloxPlanConverter::toVeloxPlan(
-    const ::substrait::JoinRel& sJoin) {
-  if (!sJoin.has_left()) {
-    VELOX_FAIL("Left Rel is expected in JoinRel.");
+    const ::substrait::HashJoinRel& hashJoinRel) {
+  if (!hashJoinRel.has_left()) {
+    VELOX_FAIL("Left Rel is expected in HashJoinRel.");
   }
-  if (!sJoin.has_right()) {
-    VELOX_FAIL("Right Rel is expected in JoinRel.");
+  if (!hashJoinRel.has_right()) {
+    VELOX_FAIL("Right Rel is expected in HashJoinRel.");
   }
 
-  auto leftNode = toVeloxPlan(sJoin.left());
-  auto rightNode = toVeloxPlan(sJoin.right());
+  auto leftNode = toVeloxPlan(hashJoinRel.left());
+  auto rightNode = toVeloxPlan(hashJoinRel.right());
 
   auto outputRowType =
       leftNode->outputType()->unionWith(rightNode->outputType());
 
-  auto joinType = join::fromProto(sJoin.type());
+  auto joinType = join::fromProto(hashJoinRel.type());
 
   if (joinType == core::JoinType::kLeftSemi) {
     outputRowType = leftNode->outputType();
@@ -785,30 +785,30 @@ core::PlanNodePtr SubstraitVeloxPlanConverter::toVeloxPlan(
     outputRowType = rightNode->outputType();
   }
 
-  // extract join keys from join expression
-  std::vector<const ::substrait::Expression::FieldReference*> leftExprs,
-      rightExprs;
+  // Convert keys
 
-  extractJoinKeys(sJoin.expression(), leftExprs, rightExprs);
-  VELOX_CHECK_EQ(leftExprs.size(), rightExprs.size());
+  auto substraitLeftKeys = hashJoinRel.left_keys();
+  auto substraitRightKeys = hashJoinRel.right_keys();
+  VELOX_CHECK_EQ(substraitLeftKeys.size(), substraitRightKeys.size());
 
   std::vector<std::shared_ptr<const core::FieldAccessTypedExpr>> leftKeys,
       rightKeys;
-  leftKeys.reserve(leftExprs.size());
-  rightKeys.reserve(leftExprs.size());
-  for (size_t i = 0; i < leftExprs.size(); ++i) {
+  leftKeys.reserve(substraitLeftKeys.size());
+  rightKeys.reserve(substraitRightKeys.size());
+
+  for (auto leftKey : substraitLeftKeys) {
     leftKeys.emplace_back(exprConverter_->toVeloxExpr(
-        *leftExprs[i],
-        leftNode->outputType()->unionWith(rightNode->outputType())));
+        leftKey.mutable_expression()->selection(), leftNode->outputType()));
+  }
+  for (auto rightKey : substraitRightKeys) {
     rightKeys.emplace_back(exprConverter_->toVeloxExpr(
-        *rightExprs[i],
-        leftNode->outputType()->unionWith(rightNode->outputType())));
+        rightKey.mutable_expression()->selection(), rightNode->outputType()));
   }
 
   core::TypedExprPtr filter;
-  if (sJoin.has_post_join_filter()) {
+  if (hashJoinRel.has_post_join_filter()) {
     filter = exprConverter_->toVeloxExpr(
-        sJoin.post_join_filter(),
+        hashJoinRel.post_join_filter(),
         leftNode->outputType()->unionWith(rightNode->outputType()));
   }
 
