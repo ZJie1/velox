@@ -99,22 +99,34 @@ class VeloxToSubstraitPlanConvertor {
       ::substrait::FetchRel* fetchRel);
 
   /// Convert Velox HashJoin Node into Substrait HashJoinRel.
-  void toSubstraitHashJoin(
+  void toSubstrait(
       google::protobuf::Arena& arena,
       const std::shared_ptr<const core::HashJoinNode> hashJoinNode,
       ::substrait::Rel* rel);
 
   /// Convert Velox MergeJoin Node into Substrait MergeJoinRel.
-  void toSubstraitMergeJoin(
+  void toSubstrait(
       google::protobuf::Arena& arena,
       const std::shared_ptr<const core::MergeJoinNode> mergeJoinNode,
       ::substrait::Rel* rel);
 
   /// Convert Velox CrossJoin Node into Substrait CrossRel.
-  void toSubstraitCrossJoin(
+  void toSubstrait(
       google::protobuf::Arena& arena,
       const std::shared_ptr<const core::CrossJoinNode> crossJoinNode,
-      ::substrait::CrossRel* crossJoinRel);
+      ::substrait::Rel* crossJoinRel);
+
+  /// Check there only have two sources for the velox join node
+  /// and return each node output.
+  const std::pair<const RowTypePtr&, const RowTypePtr&> getTwoSourcesOutput(
+      const std::shared_ptr<const core::PlanNode>& joinNode);
+
+  /// Insert a project rel for outputRowType of HashJoinNode.
+  void constructProjectRel(
+      google::protobuf::Arena& arena,
+      ::substrait::ProjectRel* projectRel,
+      const std::shared_ptr<const core::PlanNode>& joinNode,
+      const RowTypePtr& joinOutputRowType);
 
   /// The Expression converter used to convert Velox representations into
   /// Substrait expressions.

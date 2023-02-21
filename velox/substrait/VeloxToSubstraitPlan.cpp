@@ -123,9 +123,19 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
     toSubstrait(arena, aggregationNode, aggregateRel);
     return;
   }
-  if (auto joinNode =
+  if (auto hashJoinNode =
           std::dynamic_pointer_cast<const core::HashJoinNode>(planNode)) {
-    toSubstraitHashJoin(arena, joinNode, rel);
+    toSubstrait(arena, hashJoinNode, rel);
+    return;
+  }
+  if (auto mergeJoinNode =
+          std::dynamic_pointer_cast<const core::MergeJoinNode>(planNode)) {
+    toSubstrait(arena, mergeJoinNode, rel);
+    return;
+  }
+  if (auto crossJoinNode =
+          std::dynamic_pointer_cast<const core::CrossJoinNode>(planNode)) {
+    toSubstrait(arena, crossJoinNode, rel);
     return;
   }
   if (auto orderbyNode =
@@ -444,35 +454,160 @@ void VeloxToSubstraitPlanConvertor::toSubstrait(
   fetchRel->mutable_common()->mutable_direct();
 }
 
-void VeloxToSubstraitPlanConvertor::toSubstraitHashJoin(
+void VeloxToSubstraitPlanConvertor::toSubstrait(
     google::protobuf::Arena& arena,
-    const std::shared_ptr<const core::HashJoinNode> joinNode,
+    const std::shared_ptr<const core::HashJoinNode> hashJoinNode,
     ::substrait::Rel* rel) {
-  // JoinNode has exactly two input nodes.
-  VELOX_USER_CHECK_EQ(
-      2,
-      joinNode->sources().size(),
-      "Join plan node must have exactly two sources.");
-
-  const auto& joinLeftSourceOutput = joinNode->sources()[0]->outputType();
-  const auto& joinRightSourceOutput = joinNode->sources()[1]->outputType();
+  auto [joinLeftSourceOutput, joinRightSourceOutput] =
+      getTwoSourcesOutput(hashJoinNode);
 
   auto joinOutputRowType =
       joinLeftSourceOutput->unionWith(joinRightSourceOutput);
 
-  if ((joinNode->joinType() == core::JoinType::kLeftSemi) //||  (joinNode->joinType() == core::JoinType::kLeft)
-     ) {
+  if (hashJoinNode->joinType() == core::JoinType::kLeftSemi) {
     joinOutputRowType = joinLeftSourceOutput;
-  } else if (
-      (joinNode->joinType() == core::JoinType::kRightSemi) ) { //||(joinNode->joinType() == core::JoinType::kRight)
+  } else if (hashJoinNode->joinType() == core::JoinType::kRightSemi) {
     joinOutputRowType = joinRightSourceOutput;
   }
-  auto joinOutputTypeSize = joinOutputRowType->size();
 
   // Insert a project rel for outputRowType of HashJoinNode.
   auto projectRel = rel->mutable_project();
-  auto projectEmitRel = projectRel->mutable_common()->mutable_emit();
+  constructProjectRel(arena, projectRel, hashJoinNode, joinOutputRowType);
 
+  auto hashJoinRel = projectRel->mutable_input()->mutable_hash_join();
+
+  // Convert the input node.
+  toSubstrait(arena, hashJoinNode->sources()[0], hashJoinRel->mutable_left());
+  toSubstrait(arena, hashJoinNode->sources()[1], hashJoinRel->mutable_right());
+
+  // Convert the left and right keys.
+  VELOX_CHECK_EQ(
+      hashJoinNode->leftKeys().size(), hashJoinNode->rightKeys().size());
+
+  auto substraitLeftKeys = hashJoinRel->add_left_keys();
+  auto substraitRightKeys = hashJoinRel->add_right_keys();
+  for (auto leftKey : hashJoinNode->leftKeys()) {
+    substraitLeftKeys->mutable_expression()->mutable_selection()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(arena, leftKey, joinLeftSourceOutput));
+  }
+  for (auto rightKey : hashJoinNode->rightKeys()) {
+    substraitRightKeys->mutable_expression()->mutable_selection()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(
+            arena, rightKey, joinRightSourceOutput));
+  }
+
+  if (hashJoinNode->filter()) {
+    // Set the join filter.
+    hashJoinRel->mutable_post_join_filter()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(
+            arena,
+            hashJoinNode->filter(),
+            joinLeftSourceOutput->unionWith(joinRightSourceOutput)));
+  }
+  hashJoinRel->mutable_common()->mutable_direct();
+
+  hashJoinRel->set_type(join::toHashProto(hashJoinNode->joinType()));
+}
+
+void VeloxToSubstraitPlanConvertor::toSubstrait(
+    google::protobuf::Arena& arena,
+    const std::shared_ptr<const core::MergeJoinNode> mergeJoinNode,
+    ::substrait::Rel* rel) {
+  auto [joinLeftSourceOutput, joinRightSourceOutput] =
+      getTwoSourcesOutput(mergeJoinNode);
+
+  auto joinOutputRowType =
+      joinLeftSourceOutput->unionWith(joinRightSourceOutput);
+
+  VELOX_USER_CHECK(
+      mergeJoinNode->isInnerJoin() || mergeJoinNode->isLeftJoin(),
+      "Merge join supports only inner and left joins. Other join types are not supported yet.");
+
+  // Insert a project rel for outputRowType of MergeJoinNode.
+  auto projectRel = rel->mutable_project();
+  constructProjectRel(arena, projectRel, mergeJoinNode, joinOutputRowType);
+
+  auto mergeJoinRel = projectRel->mutable_input()->mutable_merge_join();
+
+  // Convert the input node.
+  toSubstrait(arena, mergeJoinNode->sources()[0], mergeJoinRel->mutable_left());
+  toSubstrait(
+      arena, mergeJoinNode->sources()[1], mergeJoinRel->mutable_right());
+
+  // Convert the left and right keys.
+  VELOX_CHECK_EQ(
+      mergeJoinNode->leftKeys().size(), mergeJoinNode->rightKeys().size());
+
+  auto substraitLeftKeys = mergeJoinRel->add_left_keys();
+  auto substraitRightKeys = mergeJoinRel->add_right_keys();
+  for (auto leftKey : mergeJoinNode->leftKeys()) {
+    substraitLeftKeys->mutable_expression()->mutable_selection()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(arena, leftKey, joinLeftSourceOutput));
+  }
+  for (auto rightKey : mergeJoinNode->rightKeys()) {
+    substraitRightKeys->mutable_expression()->mutable_selection()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(
+            arena, rightKey, joinRightSourceOutput));
+  }
+
+  if (mergeJoinNode->filter()) {
+    // Set the join filter.
+    mergeJoinRel->mutable_post_join_filter()->MergeFrom(
+        exprConvertor_->toSubstraitExpr(
+            arena,
+            mergeJoinNode->filter(),
+            joinLeftSourceOutput->unionWith(joinRightSourceOutput)));
+  }
+  mergeJoinRel->mutable_common()->mutable_direct();
+
+  mergeJoinRel->set_type(join::toMergeProto(mergeJoinNode->joinType()));
+}
+
+void VeloxToSubstraitPlanConvertor::toSubstrait(
+    google::protobuf::Arena& arena,
+    const std::shared_ptr<const core::CrossJoinNode> crossJoinNode,
+    ::substrait::Rel* crossJoinRel) {
+  auto [joinLeftSourceOutput, joinRightSourceOutput] =
+      getTwoSourcesOutput(crossJoinNode);
+
+  auto joinOutputRowType =
+      joinLeftSourceOutput->unionWith(joinRightSourceOutput);
+
+  // Insert a project rel for outputRowType of HashJoinNode.
+  auto projectRel = crossJoinRel->mutable_project();
+  constructProjectRel(arena, projectRel, crossJoinNode, joinOutputRowType);
+
+  auto crossRel = projectRel->mutable_input()->mutable_cross();
+
+  // Convert the input node.
+  toSubstrait(arena, crossJoinNode->sources()[0], crossRel->mutable_left());
+  toSubstrait(arena, crossJoinNode->sources()[1], crossRel->mutable_right());
+
+  crossRel->mutable_common()->mutable_direct();
+}
+
+const std::pair<const RowTypePtr&, const RowTypePtr&>
+VeloxToSubstraitPlanConvertor::getTwoSourcesOutput(
+    const std::shared_ptr<const core::PlanNode>& node) {
+  // JoinNode has exactly two input nodes.
+  VELOX_USER_CHECK_EQ(
+      2,
+      node->sources().size(),
+      "Join plan node must have exactly two sources.");
+
+  const auto& joinLeftSourceOutput = node->sources()[0]->outputType();
+  const auto& joinRightSourceOutput = node->sources()[1]->outputType();
+
+  return {joinLeftSourceOutput, joinRightSourceOutput};
+}
+
+void VeloxToSubstraitPlanConvertor::constructProjectRel(
+    google::protobuf::Arena& arena,
+    ::substrait::ProjectRel* projectRel,
+    const std::shared_ptr<const core::PlanNode>& joinNode,
+    const facebook::velox::RowTypePtr& joinOutputRowType) {
+  auto projectEmitRel = projectRel->mutable_common()->mutable_emit();
+  auto joinOutputTypeSize = joinOutputRowType->size();
   for (auto i = 0; i < joinNode->outputType()->size(); i++) {
     auto fieldRef = std::make_shared<const core::FieldAccessTypedExpr>(
         joinNode->outputType()->childAt(i), joinNode->outputType()->nameOf(i));
@@ -480,39 +615,6 @@ void VeloxToSubstraitPlanConvertor::toSubstraitHashJoin(
         exprConvertor_->toSubstraitExpr(arena, fieldRef, joinOutputRowType));
     projectEmitRel->add_output_mapping(joinOutputTypeSize + i);
   }
-
-  auto hashJoinRel = projectRel->mutable_input()->mutable_hash_join();
-
-  // Convert the input node.
-  toSubstrait(arena, joinNode->sources()[0], hashJoinRel->mutable_left());
-  toSubstrait(arena, joinNode->sources()[1], hashJoinRel->mutable_right());
-
-  // Convert the left and right keys.
-  VELOX_CHECK_EQ(joinNode->leftKeys().size(), joinNode->rightKeys().size());
-
-  auto substraitLeftKeys = hashJoinRel->add_left_keys();
-  auto substraitRightKeys = hashJoinRel->add_right_keys();
-  for (auto leftKey : joinNode->leftKeys()) {
-    substraitLeftKeys->mutable_expression()->mutable_selection()->MergeFrom(
-        exprConvertor_->toSubstraitExpr(arena, leftKey, joinLeftSourceOutput));
-  }
-  for (auto rightKey : joinNode->rightKeys()) {
-    substraitRightKeys->mutable_expression()->mutable_selection()->MergeFrom(
-        exprConvertor_->toSubstraitExpr(
-            arena, rightKey, joinRightSourceOutput));
-  }
-
-  if (joinNode->filter()) {
-    // Set the join filter.
-    hashJoinRel->mutable_post_join_filter()->MergeFrom(
-        exprConvertor_->toSubstraitExpr(
-            arena,
-            joinNode->filter(),
-            joinLeftSourceOutput->unionWith(joinRightSourceOutput)));
-  }
-  hashJoinRel->mutable_common()->mutable_direct();
-
-  hashJoinRel->set_type(join::toHashProto(joinNode->joinType()));
 }
 
 } // namespace facebook::velox::substrait
